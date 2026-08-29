@@ -1,0 +1,265 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// System-wide role. Roles and the permission strings they grant live in the
+/// database (not hardcoded enums) so new roles can be introduced without a
+/// code deploy. Three roles are seeded and treated as system roles that
+/// cannot be deleted: SUPER_ADMIN, ORGANIZER, ATTENDEE.
+/// See backend/src/common/permissions.ts for the canonical permission-string
+/// constants a role's `permissions` array may contain.
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String   @default("")
+  permissions String[] @default([])
+  /// System roles are seeded on boot and cannot be deleted from the app.
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[]
+
+  @@map("roles")
+}
+
+/// Authentication is plain email/password. Passwords are bcrypt-hashed —
+/// never stored or returned in plaintext.
+model User {
+  id         String     @id @default(uuid())
+  name       String
+  email      String     @unique
+  password   String
+  avatarUrl  String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  ownedEvents           Event[]           @relation("EventOwner")
+  eventPermissions      EventPermission[]
+  grantsMade            EventPermission[] @relation("PermissionGrantedBy")
+  notifications         Notification[]
+  activities            Activity[]
+  bookings              Booking[]
+
+  @@index([roleId])
+  @@index([companyId])
+  @@map("users")
+}
+
+/// Per-event, per-user access grant made by the event owner (or a Super
+/// Admin) — this is the "Shared Members" list. `permissions` holds any
+/// combination of the capability strings in EVENT_PERMISSION (VIEW,
+/// ATTENDEE, EDIT — see backend/src/common/permissions.ts), matching the
+/// spec's "View + Attendee", "Edit only", "All permissions", etc.
+///
+/// Ownership itself is NOT represented here — the owner always has every
+/// capability implicitly via Event.ownerId; this table is only for grants
+/// to people who are *not* the owner.
+///
+/// status distinguishes "Revoke Access" (permissions cleared, row kept for
+/// history — status REMOVED) from "Remove Member" (row deleted outright).
+/// Only ACTIVE rows grant any access; REMOVED rows are audit trail only.
+model EventPermission {
+  id          String   @id @default(uuid())
+  permissions String[] @default([])
+  status      String   @default("ACTIVE")
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Who shared access with this person — shown as "Shared By" in the
+  /// Shared Members list. Kept even if that user is later deleted.
+  grantedById String?
+  grantedBy   User?   @relation("PermissionGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  /// "Date Shared" / "Last Updated" in the Shared Members list.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+  @@map("event_permissions")
+}
+
+/// category is validated at the DTO layer to one of:
+/// Music | Conference | Workshop | Sports | Festival | Community
+/// status is validated at the DTO layer to one of: published | draft | sold-out
+/// slug is null while the event is still being built in the admin wizard —
+/// it is generated once, on the final "finalize" step, and kept stable
+/// after that even if the title changes later.
+model Event {
+  id          String   @id @default(uuid())
+  slug        String?  @unique
+  title       String
+  category    String   @default("Community")
+  date        String   @default("")
+  time        String   @default("")
+  eventMode   String   @default("offline")
+  onlineUrl   String   @default("")
+  venue       String   @default("")
+  capacity    Int      @default(0)
+  attendees   Int      @default(0)
+  price       Float    @default(0)
+  status      String   @default("draft")
+  description String   @default("")
+  agenda      String[] @default([])
+  host        String   @default("Organizer")
+  featured    Boolean  @default(false)
+  banners     String[] @default([])
+  /// Which wizard step the organizer last completed: 1 info, 2 capacity &
+  /// banners, 3 remaining details, 4 registration fields, 5 finalized.
+  wizardStep  Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  /// The user who created the event. Owners (and Super Admins) always have
+  /// full manage access; additional per-user access is granted via
+  /// EventPermission rows below.
+  ownerId String
+  owner   User   @relation("EventOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  fields        EventFormField[]
+  bookings      Booking[]
+  permissions   EventPermission[]
+  notifications Notification[]
+
+  @@map("events")
+  @@index([ownerId])
+  @@index([companyId])
+}
+
+/// One row per custom registration-form field an organizer defines for an
+/// event in the last wizard step. type is validated at the DTO layer to one
+/// of: text | email | phone | number | date | textarea | select | checkbox
+model EventFormField {
+  id       String   @id @default(uuid())
+  name     String
+  label    String
+  type     String   @default("text")
+  required Boolean  @default(false)
+  options  String[] @default([])
+  order    Int      @default(0)
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, name])
+  @@index([eventId])
+  @@map("event_form_fields")
+}
+
+/// A ticket/registration booking made through the public event URL, either
+/// as a guest (userId null) or by a signed-in visitor.
+/// status is validated at the DTO layer to one of: confirmed | cancelled
+/// registrationStatus supports the Attendee Manager approve/reject
+/// workflow; validated at the DTO layer to one of: pending | approved | rejected
+/// paymentMethod is validated at the DTO layer to one of: card | googlepay | phonepe | paytm | netbanking | free
+/// paymentStatus is set by the server (never client-supplied) to one of: pending | paid | failed | refunded
+model Booking {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  phone     String   @default("")
+  seats     Int      @default(1)
+  razorpayOrderId String?
+
+  responses Json     @default("{}")
+  status    String   @default("confirmed")
+  registrationStatus String @default("approved")
+  createdAt DateTime @default(now())
+
+  /// Attendee Management capability: check-in/check-out at the door.
+  checkedIn   Boolean   @default(false)
+  checkedInAt DateTime?
+
+  /// seats * event.price at the moment of booking, frozen so later price
+  /// edits on the event never change what an existing attendee owes/paid.
+  amount        Float     @default(0)
+  paymentMethod String    @default("free")
+  paymentStatus String    @default("pending")
+  /// Set once a simulated gateway callback confirms the charge.
+  transactionId String?
+  paidAt        DateTime?
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([userId])
+  @@map("bookings")
+}
+
+/// action is one of: created | updated | deleted
+model Activity {
+  id     String   @id @default(uuid())
+  action String
+  title  String
+  at     DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activities")
+  @@index([userId])
+}
+
+/// In-app notification, created alongside the corresponding email whenever
+/// sharing is granted, changed, or revoked. type is one of:
+/// access_granted | access_updated | access_revoked | member_removed
+model Notification {
+  id      String  @id @default(uuid())
+  type    String
+  title   String
+  message String
+  read    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  eventId String?
+  event   Event?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([eventId])
+  @@map("notifications")
+}
+
+/// Organization/Company entity. Users and Events can be associated with a Company.
+model Company {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  website     String?
+  logoUrl     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users  User[]
+  events Event[]
+
+  @@map("companies")
+}

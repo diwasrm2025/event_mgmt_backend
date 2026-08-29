@@ -1,0 +1,2 @@
+ALTER TABLE "events" ADD COLUMN "eventMode" TEXT NOT NULL DEFAULT 'offline';
+ALTER TABLE "events" ADD COLUMN "onlineUrl" TEXT NOT NULL DEFAULT '';

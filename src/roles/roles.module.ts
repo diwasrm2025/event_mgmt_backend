@@ -1,0 +1,12 @@
+import { Module } from '@nestjs/common';
+import { RolesController } from './roles.controller';
+import { RolesService } from './roles.service';
+import { MailModule } from '../mail/mail.module';
+
+@Module({
+  imports: [MailModule],
+  controllers: [RolesController],
+  providers: [RolesService],
+  exports: [RolesService],
+})
+export class RolesModule {}
