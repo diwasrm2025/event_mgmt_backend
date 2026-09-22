@@ -512,7 +512,7 @@ export function renderTicketEmail(ctx: TicketEmailContext): string {
         <!-- Hero stub: gradient background, opaque solid-color text -->
         <tr>
           <td style="border-radius:24px 24px 0 0;background-image:linear-gradient(135deg,#111827 0%,#312e81 55%,#7e22ce 100%);padding:34px 32px 78px;position:relative;">
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#c4b5fd;margin-bottom:10px;">Admission Pass</div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#c4b5fd;margin-bottom:10px;">Thank you for registering!</div>
             <div style="font-size:25px;font-weight:800;line-height:1.25;color:#ffffff;letter-spacing:-0.01em;">${ctx.eventTitle}</div>
             <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:18px;">
               <tr>
@@ -586,30 +586,7 @@ export function renderTicketEmail(ctx: TicketEmailContext): string {
           </td>
         </tr>
 
-        <!-- Scan block -->
-        <tr>
-          <td style="padding:22px 32px 6px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0f172a;border-radius:16px;">
-              <tr>
-                <td style="padding:20px 22px;">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                    <tr>
-                      <td style="vertical-align:middle;">
-                        <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#94a3b8;margin-bottom:6px;">Scan at Entry</div>
-                        <div style="font-size:12px;color:#cbd5e1;">Show this pass on your phone at the venue gate.</div>
-                      </td>
-                      <td align="right" style="vertical-align:middle;width:96px;">
-                        <div style="background-color:#ffffff;border-radius:8px;padding:8px;display:inline-block;">
-                          <div style="font-family:monospace;font-size:18px;font-weight:900;letter-spacing:3px;color:#000000;line-height:1;">▌│▌▌│││▌│</div>
-                        </div>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
+        
 
         <!-- Guidelines -->
         <tr>

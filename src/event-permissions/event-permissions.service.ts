@@ -10,6 +10,7 @@ const PERMISSION_LABELS: Record<string, string> = {
   [EVENT_PERMISSION.VIEW]: 'View',
   [EVENT_PERMISSION.ATTENDEE]: 'Attendee Management',
   [EVENT_PERMISSION.EDIT]: 'Edit',
+  [EVENT_PERMISSION.PAYMENT_APPROVE]: 'Payment Approve',
 };
 
 function describePermissions(permissions: string[]) {

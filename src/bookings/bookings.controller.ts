@@ -8,15 +8,10 @@ import { CurrentUser, AuthUser } from '../common/decorators/current-user.decorat
 import { BookingsService } from './bookings.service';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
 
-/** True when the caller's only access to this event is a shared ATTENDEE
- * grant — not the owner, not Super Admin, and not also holding EDIT. Read
- * off `request.eventGrant`, which EventAccessGuard attaches for every
- * request that passes through it. */
-function isAttendeeOnlyGrant(eventGrant: unknown): boolean {
-  if (eventGrant === 'MANAGE_ALL' || eventGrant === 'OWNER') return false;
-  if (!eventGrant || typeof eventGrant !== 'object') return false;
-  const permissions = (eventGrant as { permissions?: string[] }).permissions ?? [];
-  return !permissions.includes(EVENT_PERMISSION.EDIT);
+export function rosterCapabilities(grant: unknown) {
+  const all = grant === 'OWNER' || grant === 'MANAGE_ALL';
+  const permissions = grant && typeof grant === 'object' ? (grant as { permissions?: string[] }).permissions ?? [] : [];
+  return { canApprovePayment: all || permissions.includes(EVENT_PERMISSION.PAYMENT_APPROVE), canCheckIn: all || permissions.includes(EVENT_PERMISSION.ATTENDEE) };
 }
 
 @UseGuards(JwtAuthGuard)
@@ -31,23 +26,26 @@ export class BookingsController {
 
   /** Roster: every attendee booked for one event. Any active grant (View,
    * Attendee, or Edit) can see who registered — managing check-in/approval
-   * requires the ATTENDEE capability specifically, enforced per-action below. */
+   * requires a separate capability for payment review and check-in. */
   @UseGuards(EventAccessGuard)
   @RequireEventAccess(EVENT_PERMISSION.VIEW, 'eventId')
   @Get('event/:eventId')
   async forEvent(@Param('eventId') eventId: string, @Req() request: Request) {
-    const restricted = isAttendeeOnlyGrant((request as { eventGrant?: unknown }).eventGrant);
-    const items = await this.bookingsService.eventBookings(eventId, restricted);
-    return { restricted, items };
+    const capabilities = rosterCapabilities((request as { eventGrant?: unknown }).eventGrant);
+    const items = await this.bookingsService.roster(eventId, capabilities);
+    return { capabilities, items };
   }
 
   @UseGuards(EventAccessGuard)
-  @RequireEventAccess(EVENT_PERMISSION.ATTENDEE, 'eventId')
+  @RequireEventAccess(EVENT_PERMISSION.VIEW, 'eventId')
   @Get('event/:eventId/export')
   @Header('Content-Type', 'text/csv')
   async exportRoster(@Param('eventId') eventId: string, @Req() request: Request, @Res({ passthrough: true }) res: Response) {
-    const restricted = isAttendeeOnlyGrant((request as { eventGrant?: unknown }).eventGrant);
-    const csv = await this.bookingsService.exportRoster(eventId, restricted);
+    const capabilities = rosterCapabilities((request as { eventGrant?: unknown }).eventGrant);
+    const rows = await this.bookingsService.roster(eventId, capabilities);
+    const fields = ['name', 'email', 'phone', 'paymentStatus', ...(capabilities.canApprovePayment ? ['transactionId', 'rejectionReason'] : []), ...(capabilities.canCheckIn ? ['checkedIn'] : [])];
+    const escape = (value: unknown) => '"' + String(value ?? '').replace(/^[=+@-]/, match => "'" + match).replace(/"/g, '""') + '"';
+    const csv = [fields.join(','), ...rows.map(row => fields.map(field => escape((row as Record<string, unknown>)[field])).join(','))].join('\n');
     res.set('Content-Disposition', `attachment; filename="attendees-${eventId}.csv"`);
     return csv;
   }
@@ -60,13 +58,17 @@ export class BookingsController {
   }
 
   @UseGuards(EventAccessGuard)
-  @RequireEventAccess(EVENT_PERMISSION.ATTENDEE, 'eventId')
+  @RequireEventAccess(EVENT_PERMISSION.PAYMENT_APPROVE, 'eventId')
   @Patch('event/:eventId/:bookingId/registration-status')
   updateRegistrationStatus(
     @Param('eventId') eventId: string,
     @Param('bookingId') bookingId: string,
     @Body() dto: UpdateRegistrationStatusDto,
+    @Req() request: Request,
   ) {
-    return this.bookingsService.updateRegistrationStatus(eventId, bookingId, dto);
+    return this.bookingsService.updateRegistrationStatus(eventId, bookingId, dto).then(booking => ({
+      id: booking.id, paymentStatus: booking.paymentStatus, registrationStatus: booking.registrationStatus,
+      rejectionReason: booking.rejectionReason, paidAt: booking.paidAt, status: booking.status,
+    }));
   }
 }

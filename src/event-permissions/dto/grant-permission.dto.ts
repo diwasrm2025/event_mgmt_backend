@@ -14,7 +14,7 @@ export class GrantPermissionDto {
   email?: string;
 
   @IsArray()
-  @ArrayMinSize(1, { message: 'Select at least one permission (View, Attendee Management, or Edit).' })
+  @ArrayMinSize(1, { message: 'Select at least one permission (View, Edit, Payment Approve, or Attendee Management).' })
   @ArrayUnique()
   @IsIn(ALL_EVENT_PERMISSIONS, { each: true })
   permissions!: string[];

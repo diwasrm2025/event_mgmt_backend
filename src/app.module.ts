@@ -14,7 +14,6 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { MailModule } from './mail/mail.module';
 
 import { CompaniesModule } from './companies/companies.module';
-import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -37,7 +36,6 @@ import { PaymentsModule } from './payments/payments.module';
     UsersModule,
     EventPermissionsModule,
     NotificationsModule,
-    PaymentsModule,
     MailModule,
     CompaniesModule,
   ],

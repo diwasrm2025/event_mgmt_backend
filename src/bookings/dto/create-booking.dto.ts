@@ -1,4 +1,4 @@
-import { IsEmail, IsIn, IsObject, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateBookingDto {
   @IsString()
@@ -13,8 +13,18 @@ export class CreateBookingDto {
   phone?: string;
 
   @IsOptional()
-  @IsIn(['razorpay', 'offline'])
-  paymentMethod?: 'razorpay' | 'offline';
+  @IsIn(['qr'])
+  paymentMethod?: 'qr';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  transactionId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(7000000)
+  paymentProof?: string;
 
   /** Answers keyed by the EventFormField.name for that event's custom fields. */
   @IsOptional()

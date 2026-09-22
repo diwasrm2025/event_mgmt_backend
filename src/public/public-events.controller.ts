@@ -33,6 +33,11 @@ export class PublicEventsController {
     return this.bookingsService.createBooking(slug, dto, req.user?.id ?? null);
   }
 
+  @Get('bookings/:bookingId/payment-status')
+  paymentStatus(@Param('bookingId') bookingId: string, @Query('token') token: string) {
+    return this.bookingsService.paymentStatus(bookingId, token);
+  }
+
   /** Checkout step 2 — simulated payment gateway callback. The booking id
    * doubles as the order token here, exactly like a checkout session id. */
 }

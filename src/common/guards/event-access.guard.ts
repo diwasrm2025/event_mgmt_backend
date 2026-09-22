@@ -5,14 +5,14 @@ import { EVENT_ACCESS_KEY } from '../decorators/event-access.decorator';
 import { AuthUser } from '../decorators/current-user.decorator';
 import { EVENT_PERMISSION, EventPermissionValue, GRANT_STATUS, PERMISSIONS } from '../permissions';
 
-/** EDIT and ATTENDEE each imply the ability to view the event — a shared
+/** EDIT, PAYMENT_APPROVE and ATTENDEE each imply the ability to view the event — a shared
  * Editor or Attendee Manager doesn't also need a separate VIEW grant to do
  * their job. EDIT does not imply ATTENDEE and vice versa (per spec: an
  * Editor cannot manage attendees, and an Attendee Manager cannot edit). */
 function grantSatisfies(permissions: string[], required: EventPermissionValue): boolean {
   if (permissions.includes(required)) return true;
   if (required === EVENT_PERMISSION.VIEW) {
-    return permissions.includes(EVENT_PERMISSION.EDIT) || permissions.includes(EVENT_PERMISSION.ATTENDEE);
+    return permissions.includes(EVENT_PERMISSION.EDIT) || permissions.includes(EVENT_PERMISSION.ATTENDEE) || permissions.includes(EVENT_PERMISSION.PAYMENT_APPROVE);
   }
   return false;
 }

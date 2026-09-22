@@ -22,8 +22,7 @@ model Role {
   isSystem    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
-  users User[]
+  users       User[]
 
   @@map("roles")
 }
@@ -31,26 +30,23 @@ model Role {
 /// Authentication is plain email/password. Passwords are bcrypt-hashed —
 /// never stored or returned in plaintext.
 model User {
-  id         String     @id @default(uuid())
-  name       String
-  email      String     @unique
-  password   String
-  avatarUrl  String?
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-
-  roleId String
-  role   Role   @relation(fields: [roleId], references: [id])
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
-
-  ownedEvents           Event[]           @relation("EventOwner")
-  eventPermissions      EventPermission[]
-  grantsMade            EventPermission[] @relation("PermissionGrantedBy")
-  notifications         Notification[]
-  activities            Activity[]
-  bookings              Booking[]
+  id               String            @id @default(uuid())
+  name             String
+  email            String            @unique
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  avatarUrl        String?
+  roleId           String
+  password         String
+  companyId        String?
+  activities       Activity[]
+  bookings         Booking[]
+  grantsMade       EventPermission[] @relation("PermissionGrantedBy")
+  eventPermissions EventPermission[]
+  ownedEvents      Event[]           @relation("EventOwner")
+  notifications    Notification[]
+  company          Company?          @relation(fields: [companyId], references: [id])
+  role             Role              @relation(fields: [roleId], references: [id])
 
   @@index([roleId])
   @@index([companyId])
@@ -72,23 +68,19 @@ model User {
 /// Only ACTIVE rows grant any access; REMOVED rows are audit trail only.
 model EventPermission {
   id          String   @id @default(uuid())
-  permissions String[] @default([])
-  status      String   @default("ACTIVE")
-
-  eventId String
-  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  eventId     String
+  userId      String
   /// Who shared access with this person — shown as "Shared By" in the
   /// Shared Members list. Kept even if that user is later deleted.
   grantedById String?
-  grantedBy   User?   @relation("PermissionGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
-
   /// "Date Shared" / "Last Updated" in the Shared Members list.
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  permissions String[] @default([])
+  status      String   @default("ACTIVE")
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  grantedBy   User?    @relation("PermissionGrantedBy", fields: [grantedById], references: [id])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, userId])
   @@index([eventId])
@@ -103,47 +95,44 @@ model EventPermission {
 /// it is generated once, on the final "finalize" step, and kept stable
 /// after that even if the title changes later.
 model Event {
-  id          String   @id @default(uuid())
-  slug        String?  @unique
-  title       String
-  category    String   @default("Community")
-  date        String   @default("")
-  time        String   @default("")
-  eventMode   String   @default("offline")
-  onlineUrl   String   @default("")
-  venue       String   @default("")
-  capacity    Int      @default(0)
-  attendees   Int      @default(0)
-  price       Float    @default(0)
-  status      String   @default("draft")
-  description String   @default("")
-  agenda      String[] @default([])
-  host        String   @default("Organizer")
-  featured    Boolean  @default(false)
-  banners     String[] @default([])
-  /// Which wizard step the organizer last completed: 1 info, 2 capacity &
-  /// banners, 3 remaining details, 4 registration fields, 5 finalized.
-  wizardStep  Int      @default(1)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  id            String            @id @default(uuid())
+  slug          String?           @unique
+  title         String
+  category      String            @default("Community")
+  date          String            @default("")
+  time          String            @default("")
+  venue         String            @default("")
+  capacity      Int               @default(0)
+  attendees     Int               @default(0)
+  price         Float             @default(0)
+  status        String            @default("draft")
+  description   String            @default("")
+  agenda        String[]          @default([])
+  host          String            @default("Organizer")
+  featured      Boolean           @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
   /// The user who created the event. Owners (and Super Admins) always have
   /// full manage access; additional per-user access is granted via
   /// EventPermission rows below.
-  ownerId String
-  owner   User   @relation("EventOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
-
-  fields        EventFormField[]
+  ownerId       String
+  banners       String[]          @default([])
+  /// Which wizard step the organizer last completed: 1 info, 2 capacity &
+  /// banners, 3 remaining details, 4 registration fields, 5 finalized.
+  wizardStep    Int               @default(1)
+  companyId     String?
+  eventMode     String            @default("offline")
+  onlineUrl     String            @default("")
   bookings      Booking[]
+  fields        EventFormField[]
   permissions   EventPermission[]
+  company       Company?          @relation(fields: [companyId], references: [id])
+  owner         User              @relation("EventOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   notifications Notification[]
 
-  @@map("events")
   @@index([ownerId])
   @@index([companyId])
+  @@map("events")
 }
 
 /// One row per custom registration-form field an organizer defines for an
@@ -157,9 +146,8 @@ model EventFormField {
   required Boolean  @default(false)
   options  String[] @default([])
   order    Int      @default(0)
-
-  eventId String
-  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId  String
+  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, name])
   @@index([eventId])
@@ -174,36 +162,33 @@ model EventFormField {
 /// paymentMethod is validated at the DTO layer to one of: card | googlepay | phonepe | paytm | netbanking | free
 /// paymentStatus is set by the server (never client-supplied) to one of: pending | paid | failed | refunded
 model Booking {
-  id        String   @id @default(uuid())
-  name      String
-  email     String
-  phone     String   @default("")
-  seats     Int      @default(1)
-  razorpayOrderId String?
-
-  responses Json     @default("{}")
-  status    String   @default("confirmed")
-  registrationStatus String @default("approved")
-  createdAt DateTime @default(now())
-
-  /// Attendee Management capability: check-in/check-out at the door.
-  checkedIn   Boolean   @default(false)
-  checkedInAt DateTime?
-
+  id                 String    @id @default(uuid())
+  name               String
+  email              String
+  phone              String    @default("")
+  seats              Int       @default(1)
+  responses          Json      @default("{}")
+  status             String    @default("confirmed")
+  createdAt          DateTime  @default(now())
+  eventId            String
+  userId             String?
   /// seats * event.price at the moment of booking, frozen so later price
   /// edits on the event never change what an existing attendee owes/paid.
-  amount        Float     @default(0)
-  paymentMethod String    @default("free")
-  paymentStatus String    @default("pending")
-  /// Set once a simulated gateway callback confirms the charge.
-  transactionId String?
-  paidAt        DateTime?
-
-  eventId String
-  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  amount             Float     @default(0)
+  paymentMethod      String    @default("free")
+  paymentStatus      String    @default("pending")
+  /// Attendee payment reference verified by an administrator.
+  transactionId      String?
+  paidAt             DateTime?
+  registrationStatus String    @default("approved")
+  /// Attendee Management capability: check-in/check-out at the door.
+  checkedIn          Boolean   @default(false)
+  checkedInAt        DateTime?
+  paymentProof       String?
+  paymentAccessToken String    @unique @default(uuid())
+  rejectionReason    String?
+  event              Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user               User?     @relation(fields: [userId], references: [id])
 
   @@index([eventId])
   @@index([userId])
@@ -216,31 +201,27 @@ model Activity {
   action String
   title  String
   at     DateTime @default(now())
-
   userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("activities")
   @@index([userId])
+  @@map("activities")
 }
 
 /// In-app notification, created alongside the corresponding email whenever
 /// sharing is granted, changed, or revoked. type is one of:
 /// access_granted | access_updated | access_revoked | member_removed
 model Notification {
-  id      String  @id @default(uuid())
-  type    String
-  title   String
-  message String
-  read    Boolean @default(false)
-
+  id        String   @id @default(uuid())
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
   createdAt DateTime @default(now())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  eventId String?
-  event   Event?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  userId    String
+  eventId   String?
+  event     Event?   @relation(fields: [eventId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([eventId])
@@ -257,9 +238,8 @@ model Company {
   logoUrl     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
-  users  User[]
-  events Event[]
+  events      Event[]
+  users       User[]
 
   @@map("companies")
 }

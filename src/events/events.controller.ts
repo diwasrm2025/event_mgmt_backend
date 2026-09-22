@@ -55,15 +55,17 @@ export class EventsController {
   @UseGuards(EventAccessGuard)
   @RequireEventAccess(EVENT_PERMISSION.VIEW)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.eventsService.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.eventsService.findOneForUser(id, user);
   }
 
   @UseGuards(EventAccessGuard)
   @RequireEventAccess(EVENT_PERMISSION.VIEW)
   @Get(':id/dashboard')
-  dashboard(@Param('id') id: string) {
-    return this.eventsService.dashboardSummary(id);
+  async dashboard(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const event = await this.eventsService.findOneForUser(id, user);
+    const summary = await this.eventsService.dashboardSummary(id);
+    return { ...summary, checkedInAttendees: event.isOwner || event.sharedPermissions.includes(EVENT_PERMISSION.ATTENDEE) ? summary.checkedInAttendees : undefined };
   }
 
   @RequirePermissions(PERMISSIONS.EVENTS_CREATE)

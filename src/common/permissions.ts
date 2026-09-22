@@ -25,12 +25,13 @@ export type PermissionString = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
  * owner (and Super Admin) always implicitly has every capability; this only
  * describes what a *shared* member can do. */
 export const EVENT_PERMISSION = {
-  /** View event details only. Cannot edit, delete, manage attendees, or share. */
+  /** View event details and the attendee list. Cannot edit, delete, manage attendees, or share. */
   VIEW: 'VIEW',
-  /** Manage registrations: approve/reject, check attendees in/out, export the list. Cannot edit event content. */
+  /** Manage attendee check-in and check-out. Cannot approve payments or edit event content. */
   ATTENDEE: 'ATTENDEE',
   /** Edit event details, images, schedule. Cannot delete or manage sharing. */
   EDIT: 'EDIT',
+  PAYMENT_APPROVE: 'PAYMENT_APPROVE',
 } as const;
 
 export type EventPermissionValue = (typeof EVENT_PERMISSION)[keyof typeof EVENT_PERMISSION];

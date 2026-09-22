@@ -97,6 +97,13 @@ export class EventsService {
 
   /** Access has already been verified by EventAccessGuard for :id routes —
    * this just loads the record. */
+  async findOneForUser(id: string, user: AuthUser) {
+    const event = await this.findOne(id);
+    const isOwner = event.ownerId === user.id || user.permissions.includes(PERMISSIONS.EVENTS_MANAGE_ALL);
+    const grant = isOwner ? null : await this.prisma.eventPermission.findUnique({ where: { eventId_userId: { eventId: id, userId: user.id } } });
+    return { ...event, isOwner, sharedPermissions: isOwner ? ['ALL'] : grant?.status === 'ACTIVE' ? grant.permissions : [] };
+  }
+
   async findOne(id: string) {
     const event = await this.prisma.event.findUnique({
       where: { id },
