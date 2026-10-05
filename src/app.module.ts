@@ -12,7 +12,7 @@ import { UsersModule } from './users/users.module';
 import { EventPermissionsModule } from './event-permissions/event-permissions.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { MailModule } from './mail/mail.module';
-
+import { SbiepayModule } from './sbiepay/sbiepay.module';
 import { CompaniesModule } from './companies/companies.module';
 
 @Module({
@@ -31,6 +31,7 @@ import { CompaniesModule } from './companies/companies.module';
     EventsModule,
     EventFieldsModule,
     BookingsModule,
+    SbiepayModule,
     PublicModule,
     RolesModule,
     UsersModule,

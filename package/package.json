@@ -1,0 +1,39 @@
+{
+  "name": "epay_nodejs_sdk",
+  "description": "The official Node.js SDK for SBI ePay",
+  "version": "1.2.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "start": "npm run build && node simulate.js",
+    "build": "cross-env node esbuild.config.js && tsc --emitDeclarationOnly --declaration --outDir dist"
+  },
+  "keywords": [
+    "sbiepay",
+    "payment",
+    "gateway",
+    "sdk",
+    "api"
+  ],
+  "files": [
+    "dist"
+  ],
+  "author": "State Bank of India' => 'support.sbiepay@sbi.co.in",
+  "homepage": "https://epay.sbi.bank.in/secure/home",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "axios": "^1.12.2",
+    "axios-retry": "^4.5.0"
+  },  
+  "devDependencies": {
+    "@types/node": "^24.2.0",
+    "typescript": "^5.9.2",
+    "ts-node": "^10.9.2",
+    "dotenv": "^17.2.1",
+    "esbuild": "^0.25.8",
+    "cross-env": "^10.0.0"
+  }
+}

@@ -32,6 +32,7 @@
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "epay_nodejs_sdk": "^1.2.0",
     "handlebars": "^4.7.9",
     "nodemailer": "^6.9.16",
     "passport": "^0.7.0",

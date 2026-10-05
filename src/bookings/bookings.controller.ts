@@ -71,4 +71,6 @@ export class BookingsController {
       rejectionReason: booking.rejectionReason, paidAt: booking.paidAt, status: booking.status,
     }));
   }
+
+ 
 }

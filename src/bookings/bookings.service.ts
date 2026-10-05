@@ -4,7 +4,7 @@ import { MailService } from '../mail/mail.service';
 import { renderTicketEmail } from '../mail/templates/email-templates';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
-
+import { SbiepayService } from '../sbiepay/sbiepay.service';
 function generateTransactionId() {
   const stamp = Date.now().toString(36).toUpperCase();
   const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -16,6 +16,7 @@ export class BookingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
+    private readonly sbiepay: SbiepayService,
   ) {}
 
   private async sendTicketEmail(
@@ -71,11 +72,13 @@ export class BookingsService {
 
   /** Paid registrations await administrator review of the supplied evidence. */
   async createBooking(slug: string, dto: CreateBookingDto, userId?: string | null) {
+    
     const event = await this.findBookableEvent(slug);
     this.validateResponses(event, dto.responses ?? {});
     const isFree = event.price <= 0;
+    const isSbiEpay = dto.paymentMethod === 'sbiepay';
     const transactionId = dto.transactionId?.trim().toUpperCase();
-    if (!isFree) {
+    if (!isFree && !isSbiEpay) {
       if (!transactionId || !/^[A-Z0-9-]{6,100}$/.test(transactionId)) throw new BadRequestException('Enter a valid transaction ID (6?100 letters, digits or hyphens).');
       const match = dto.paymentProof?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
       if (!match) throw new BadRequestException('Attach a PNG, JPEG or WebP payment screenshot.');
@@ -92,18 +95,51 @@ export class BookingsService {
       const created = await tx.booking.create({ data: {
         eventId: event.id, userId: userId ?? null, name: dto.name.trim(), email: dto.email.trim().toLowerCase(),
         phone: dto.phone?.trim() ?? '', seats: 1, responses: (dto.responses ?? {}) as object,
-        amount: Math.max(0, event.price), paymentMethod: isFree ? 'free' : 'qr',
-        paymentStatus: isFree ? 'paid' : 'pending', status: isFree ? 'confirmed' : 'pending',
+        amount: Math.max(0, event.price), 
+        paymentMethod: isFree ? 'free' : 'sbiepay',
+        paymentStatus: isFree ? 'paid' : 'pending',
+        status: isFree ? 'confirmed' : 'pending',
         registrationStatus: isFree ? 'approved' : 'pending',
-        transactionId: isFree ? generateTransactionId() : transactionId,
-        paymentProof: isFree ? null : dto.paymentProof, paidAt: isFree ? new Date() : null,
+        transactionId: isFree ? generateTransactionId() : null,
+        paymentProof: null,
+        paidAt: isFree ? new Date() : null,
       } });
       if (isFree) await tx.event.update({ where: { id: event.id }, data: {
         attendees: { increment: 1 }, ...(current.capacity > 0 && current.attendees + 1 >= current.capacity ? { status: 'sold-out' } : {}),
       } });
       return created;
     }, { isolationLevel: 'Serializable' });
-    if (isFree) await this.sendTicketEmail(booking, event);
+    if (isFree) {
+      await this.sendTicketEmail(booking, event);
+      return booking;
+    }
+
+    if (isSbiEpay) {
+      console.log('SBI branch reached');
+
+      const orderRefNumber = `ORDER${Date.now()}`;
+
+      console.log('SBI orderRefNumber:', orderRefNumber);
+      console.log(
+        'SBI returnUrl:',
+        `${process.env.BACKEND_URL}/bookings/sbiepay/callback`,
+      );
+
+      const orderResponse = await this.sbiepay.createOrder({
+        currencyCode: 'INR',
+        orderAmount: booking.amount,
+        orderRefNumber,
+        returnUrl: `${process.env.BACKEND_URL}/bookings/sbiepay/callback`,
+      });
+
+      console.log('SBI order response:', orderResponse);
+
+      return {
+        booking,
+        transactionUrl: orderResponse.data?.[0]?.transactionUrl,
+      };
+    }
+
     return booking;
   }
 
@@ -177,6 +213,27 @@ export class BookingsService {
     }, { isolationLevel: 'Serializable' });
     if (result.notify) await this.sendTicketEmail(result.booking, result.booking.event);
     return result.booking;
+  }
+
+  async handleSbiEpayCallback(request: any, response: any) {
+    const encData =
+      request.query?.encData ??
+      request.body?.encData;
+
+    console.log('SBI ePay encData received:', !!encData);
+
+    if (!encData || typeof encData !== 'string') {
+      return response.status(400).send('Missing encData');
+    }
+
+    const decoded = await this.sbiepay.decodeCallback(encData);
+
+    console.log('SBI ePay decoded callback:', decoded);
+
+    return response.json({
+      message: 'Callback decoded successfully',
+      data: decoded,
+    });
   }
 
 }

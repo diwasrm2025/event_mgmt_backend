@@ -13,8 +13,8 @@ export class CreateBookingDto {
   phone?: string;
 
   @IsOptional()
-  @IsIn(['qr'])
-  paymentMethod?: 'qr';
+  @IsIn(['qr', 'sbiepay'])
+  paymentMethod?: 'qr' | 'sbiepay';
 
   @IsOptional()
   @IsString()
