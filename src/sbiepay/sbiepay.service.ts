@@ -1,26 +1,41 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { SBIEPayClient } from 'epay_nodejs_sdk';
 import type { OrderSearchEntity } from 'epay_nodejs_sdk';
 
 @Injectable()
 export class SbiepayService {
-  private readonly sbiePayClient: SBIEPayClient;
+  private sbiePayClient?: SBIEPayClient;
 
-  constructor() {
+  private getClient(): SBIEPayClient {
+    if (this.sbiePayClient) return this.sbiePayClient;
+    const required = ['SBIEPAY_API_KEY', 'SBIEPAY_API_SECRET', 'SBIEPAY_ENCRYPTION_KEY'];
+    const missing = required.filter((name) => !process.env[name]?.trim());
+    if (missing.length) {
+      throw new ServiceUnavailableException(`Paid registration is unavailable. Configure ${missing.join(', ')} on the API server.`);
+    }
+    const environment = process.env.SBIEPAY_ENVIRONMENT?.trim() || 'SANDBOX';
+    if (environment !== 'LIVE' && environment !== 'SANDBOX') {
+      throw new ServiceUnavailableException('SBIEPAY_ENVIRONMENT must be LIVE or SANDBOX.');
+    }
     this.sbiePayClient = new SBIEPayClient(
       {
         apiKey: process.env.SBIEPAY_API_KEY!,
         apiSecret: process.env.SBIEPAY_API_SECRET!,
         encryptionKey: process.env.SBIEPAY_ENCRYPTION_KEY!,
       },
-      process.env.SBIEPAY_ENVIRONMENT === 'LIVE' ? 'LIVE' : 'SANDBOX',
+      environment,
       false,
       'JSON',
     );
+    return this.sbiePayClient;
+  }
+
+  assertConfigured(): void {
+    this.getClient();
   }
 
   async createOrder(payload: any) {
-    return this.withTimeout(this.sbiePayClient.order.create(payload));
+    return this.withTimeout(this.getClient().order.create(payload));
   }
   
   async searchOrder(orderSearchDetails: OrderSearchEntity) {
@@ -29,7 +44,7 @@ export class SbiepayService {
 
     try {
       const orderSearch = await this.withTimeout(
-        this.sbiePayClient.order.search(orderSearchDetails),
+        this.getClient().order.search(orderSearchDetails),
       );
 
       console.log('========== SBI EPAY ORDER SEARCH RESPONSE ==========');
@@ -75,6 +90,6 @@ export class SbiepayService {
     }
   }
   async decodeCallback(payload: string) {
-    return this.sbiePayClient.crypto.decodeCallback(payload);
+    return this.getClient().crypto.decodeCallback(payload);
   }
 }

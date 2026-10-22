@@ -82,6 +82,8 @@ export class BookingsService {
       throw new BadRequestException('This paid event does not have a valid ticket price.');
     }
     if (dto.paymentMethod && dto.paymentMethod !== 'sbiepay') throw new BadRequestException('Only SBI ePay is supported for paid registrations.');
+    // Reject unavailable checkout before creating a pending order.
+    if (!isFree) this.sbiepay.assertConfigured();
     const merchantOrderNumber = isFree ? null : 'O' + randomUUID().replace(/-/g, '');
     const booking = await this.prisma.$transaction(async (tx) => {
       const current = await tx.event.findUniqueOrThrow({ where: { id: event.id } });

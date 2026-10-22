@@ -17,6 +17,26 @@ fresh process, the start command is `npm run start:prod`.
 The frontend's `NEXT_PUBLIC_API_URL` must point at this updated API. If that
 value changes, rebuild and redeploy the frontend as well.
 
+## Render configuration
+
+- Build command: `npm ci && npm run build`
+- Pre-deploy command: `npm run prisma:deploy`
+- Start command: `npm run start:prod`
+
+If your service does not support a pre-deploy command, run migrations in the
+build command: `npm ci && npm run deploy:prepare`.
+
+Set payment credentials in the backend service's Render Environment settings:
+`SBIEPAY_API_KEY`, `SBIEPAY_API_SECRET`, `SBIEPAY_ENCRYPTION_KEY`, and
+`SBIEPAY_ENVIRONMENT` (`LIVE` or `SANDBOX`). A local `.env` file does not configure
+the Render service. Missing credentials no longer stop the API from starting;
+free registrations remain available, and paid registrations return an error
+before creating an order.
+
+The SBI SDK throws a plain object when required credentials are absent. With
+eager initialization this can appear as `ERROR [ExceptionHandler] undefined`
+during startup. The payment client now initializes only when needed.
+
 ## Event type errors
 
 - `property eventType should not exist`: the running API validation DTO does
