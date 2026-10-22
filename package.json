@@ -5,7 +5,9 @@
   "private": true,
   "license": "MIT",
   "scripts": {
+    "prebuild": "prisma generate",
     "build": "nest build",
+    "deploy:prepare": "npm run prisma:deploy && npm run build",
     "format": "prettier --write \"src/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
