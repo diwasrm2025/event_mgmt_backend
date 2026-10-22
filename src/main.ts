@@ -8,6 +8,7 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useBodyParser('json', { limit: '8mb' });
+  app.useBodyParser('urlencoded', { extended: true });
   const config = app.get(ConfigService);
 
   // Banner images uploaded through the events wizard are written to

@@ -62,6 +62,10 @@ export class CreateEventDto {
   attendees?: number;
 
   @IsOptional()
+  @IsIn(['free', 'paid'])
+  eventType?: 'free' | 'paid';
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)

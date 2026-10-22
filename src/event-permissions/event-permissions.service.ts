@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
-import { EVENT_PERMISSION, GRANT_STATUS, PERMISSIONS } from '../common/permissions';
+import { EVENT_PERMISSION, GRANT_STATUS, PERMISSIONS, SYSTEM_ROLES } from '../common/permissions';
 import { GrantPermissionDto } from './dto/grant-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -90,14 +90,22 @@ export class EventPermissionsService {
       throw new BadRequestException('The event owner already has full access — no grant needed.');
     }
 
+    const isFree = event.eventType === 'free' || event.price <= 0;
+    const permissions = isFree
+      ? dto.permissions.filter((p) => p !== EVENT_PERMISSION.PAYMENT_APPROVE)
+      : dto.permissions;
+    if (permissions.length === 0) {
+      throw new BadRequestException('Choose at least one valid permission to grant.');
+    }
+
     const existing = await this.prisma.eventPermission.findUnique({
       where: { eventId_userId: { eventId, userId: target.id } },
     });
 
     const grant = await this.prisma.eventPermission.upsert({
       where: { eventId_userId: { eventId, userId: target.id } },
-      update: { permissions: dto.permissions, status: GRANT_STATUS.ACTIVE, grantedById: actingUser.id },
-      create: { eventId, userId: target.id, permissions: dto.permissions, grantedById: actingUser.id },
+      update: { permissions, status: GRANT_STATUS.ACTIVE, grantedById: actingUser.id },
+      create: { eventId, userId: target.id, permissions, grantedById: actingUser.id },
       select: this.memberSelect,
     });
 
@@ -138,20 +146,7 @@ export class EventPermissionsService {
 
     if (!target) {
       isNewUser = true;
-      let organizerRole = await this.prisma.role.findFirst({ where: { name: 'ORGANIZER' } });
-      if (!organizerRole) {
-        organizerRole = await this.prisma.role.findFirst();
-      }
-      if (!organizerRole) {
-        organizerRole = await this.prisma.role.create({
-          data: {
-            name: 'ORGANIZER',
-            description: 'Organizer role',
-            permissions: ['events:create'],
-            isSystem: true,
-          },
-        });
-      }
+      const attendeeRole = await this.prisma.role.findUniqueOrThrow({ where: { name: SYSTEM_ROLES.ATTENDEE } });
       const bcrypt = await import('bcryptjs');
       const passwordHash = await bcrypt.hash(rawPassword, 10);
       target = await this.prisma.user.create({
@@ -159,7 +154,7 @@ export class EventPermissionsService {
           name: dto.name?.trim() || email.split('@')[0],
           email,
           password: passwordHash,
-          roleId: organizerRole.id,
+          roleId: attendeeRole.id,
         },
       });
     }
@@ -177,9 +172,17 @@ export class EventPermissionsService {
     const existing = await this.prisma.eventPermission.findFirst({ where: { id: permissionId, eventId } });
     if (!existing) throw new NotFoundException('Shared member not found.');
 
+    const isFree = event.eventType === 'free' || event.price <= 0;
+    const permissions = isFree
+      ? dto.permissions.filter((p) => p !== EVENT_PERMISSION.PAYMENT_APPROVE)
+      : dto.permissions;
+    if (permissions.length === 0) {
+      throw new BadRequestException('At least one valid permission must remain active.');
+    }
+
     const grant = await this.prisma.eventPermission.update({
       where: { id: permissionId },
-      data: { permissions: dto.permissions, status: GRANT_STATUS.ACTIVE },
+      data: { permissions, status: GRANT_STATUS.ACTIVE },
       select: this.memberSelect,
     });
 

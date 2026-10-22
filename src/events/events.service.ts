@@ -148,6 +148,12 @@ export class EventsService {
       throw new BadRequestException('Booked seats cannot exceed capacity.');
     }
 
+    const eventType = dto.eventType ?? ((dto.price ?? 0) > 0 ? 'paid' : 'free');
+    const price = eventType === 'free' ? 0 : dto.price ?? 0;
+    if (eventType === 'paid' && price <= 0) {
+      throw new BadRequestException('Paid events must have a ticket price greater than zero.');
+    }
+
     const event = await this.prisma.event.create({
       data: {
         title: dto.title.trim(),
@@ -159,7 +165,8 @@ export class EventsService {
         venue: dto.venue?.trim() ?? '',
         capacity: dto.capacity ?? 0,
         attendees: dto.attendees ?? 0,
-        price: dto.price ?? 0,
+        eventType,
+        price,
         status: dto.status ?? 'draft',
         description: dto.description?.trim() ?? '',
         agenda: dto.agenda ?? [],
@@ -183,11 +190,18 @@ export class EventsService {
 
     const nextCapacity = dto.capacity ?? existing.capacity;
     const nextAttendees = dto.attendees ?? existing.attendees;
+    const eventType = dto.eventType ?? (dto.price === undefined ? existing.eventType : dto.price > 0 ? 'paid' : 'free');
+    const price = eventType === 'free' ? 0 : dto.price ?? existing.price;
+    if (eventType === 'paid' && price <= 0) {
+      throw new BadRequestException('Paid events must have a ticket price greater than zero.');
+    }
     if (nextAttendees > nextCapacity) {
       throw new BadRequestException('Booked seats cannot exceed capacity.');
     }
 
     const data: Record<string, unknown> = { ...dto };
+    data.eventType = eventType;
+    data.price = price;
     delete (data as { slug?: unknown }).slug;
     delete (data as { ownerId?: unknown }).ownerId;
     if (typeof dto.title === 'string') data.title = dto.title.trim();
@@ -212,6 +226,9 @@ export class EventsService {
     const existing = await this.findOne(id);
 
     const missing: string[] = [];
+    if (existing.eventType === 'paid' && existing.price <= 0) {
+      missing.push('a ticket price for this paid event');
+    }
     if (!existing.title?.trim()) missing.push('title');
     if (!existing.date) missing.push('date');
     if (!existing.time) missing.push('time');

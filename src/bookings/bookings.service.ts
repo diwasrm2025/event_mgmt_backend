@@ -1,18 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { BadRequestException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { renderTicketEmail } from '../mail/templates/email-templates';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
 import { SbiepayService } from '../sbiepay/sbiepay.service';
-function generateTransactionId() {
-  const stamp = Date.now().toString(36).toUpperCase();
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `TXN-${stamp}-${rand}`;
-}
-
 @Injectable()
 export class BookingsService {
+  private readonly logger = new Logger(BookingsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
@@ -58,6 +54,9 @@ export class BookingsService {
       const value = responses?.[field.name];
       const isEmpty = value === undefined || value === null || value === '';
 
+      if (field.type === 'checkbox' && value !== undefined && typeof value !== 'boolean') {
+        throw new BadRequestException(`"${field.label}" must be a checkbox value.`);
+      }
       if (field.required && field.type !== 'checkbox' && isEmpty) {
         throw new BadRequestException(`"${field.label}" is required.`);
       }
@@ -70,37 +69,34 @@ export class BookingsService {
     }
   }
 
-  /** Paid registrations await administrator review of the supplied evidence. */
+  /** Paid registrations are settled only by SBI Order Search. */
   async createBooking(slug: string, dto: CreateBookingDto, userId?: string | null) {
     
     const event = await this.findBookableEvent(slug);
-    this.validateResponses(event, dto.responses ?? {});
-    const isFree = event.price <= 0;
-    const isSbiEpay = dto.paymentMethod === 'sbiepay';
-    const transactionId = dto.transactionId?.trim().toUpperCase();
-    if (!isFree && !isSbiEpay) {
-      if (!transactionId || !/^[A-Z0-9-]{6,100}$/.test(transactionId)) throw new BadRequestException('Enter a valid transaction ID (6?100 letters, digits or hyphens).');
-      const match = dto.paymentProof?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
-      if (!match) throw new BadRequestException('Attach a PNG, JPEG or WebP payment screenshot.');
-      const bytes = Buffer.from(match[2], 'base64');
-      const valid = match[1] === 'png' ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
-        : match[1] === 'jpeg' ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
-        : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
-      if (!valid || bytes.length > 5 * 1024 * 1024) throw new BadRequestException('Use a valid screenshot up to 5 MB.');
+    const isFree = event.eventType === 'free' || (!event.eventType && event.price <= 0);
+    if (isFree && dto.paymentMethod) {
+      throw new BadRequestException('Free event registrations do not accept payment details.');
     }
+    this.validateResponses(event, dto.responses ?? {});
+    if (!isFree && event.price <= 0) {
+      throw new BadRequestException('This paid event does not have a valid ticket price.');
+    }
+    if (dto.paymentMethod && dto.paymentMethod !== 'sbiepay') throw new BadRequestException('Only SBI ePay is supported for paid registrations.');
+    const merchantOrderNumber = isFree ? null : 'O' + randomUUID().replace(/-/g, '');
     const booking = await this.prisma.$transaction(async (tx) => {
       const current = await tx.event.findUniqueOrThrow({ where: { id: event.id } });
       if (current.capacity > 0 && current.attendees >= current.capacity) throw new BadRequestException('This event is sold out.');
-      if (transactionId && await tx.booking.findFirst({ where: { paymentMethod: 'qr', transactionId } })) throw new BadRequestException('This transaction ID has already been submitted.');
       const created = await tx.booking.create({ data: {
         eventId: event.id, userId: userId ?? null, name: dto.name.trim(), email: dto.email.trim().toLowerCase(),
         phone: dto.phone?.trim() ?? '', seats: 1, responses: (dto.responses ?? {}) as object,
         amount: Math.max(0, event.price), 
         paymentMethod: isFree ? 'free' : 'sbiepay',
+        merchantOrderNumber,
+        orderStatus: isFree ? null : 'CREATED',
         paymentStatus: isFree ? 'paid' : 'pending',
         status: isFree ? 'confirmed' : 'pending',
         registrationStatus: isFree ? 'approved' : 'pending',
-        transactionId: isFree ? generateTransactionId() : null,
+        transactionId: null,
         paymentProof: null,
         paidAt: isFree ? new Date() : null,
       } });
@@ -114,33 +110,21 @@ export class BookingsService {
       return booking;
     }
 
-    if (isSbiEpay) {
-      console.log('SBI branch reached');
-
-      const orderRefNumber = `ORDER${Date.now()}`;
-
-      console.log('SBI orderRefNumber:', orderRefNumber);
-      console.log(
-        'SBI returnUrl:',
-        `${process.env.BACKEND_URL}/bookings/sbiepay/callback`,
-      );
-
+    // Persist the merchant reference before contacting SBI so uncertain create responses can be searched.
+    try {
       const orderResponse = await this.sbiepay.createOrder({
-        currencyCode: 'INR',
-        orderAmount: booking.amount,
-        orderRefNumber,
-        returnUrl: `${process.env.BACKEND_URL}/bookings/sbiepay/callback`,
+        currencyCode: 'INR', orderAmount: booking.amount,
+        orderRefNumber: merchantOrderNumber,
+        returnUrl: (process.env.BACKEND_URL || 'http://localhost:4000').replace(/\/$/, '') + '/api/bookings/sbiepay/callback',
       });
-
-      console.log('SBI order response:', orderResponse);
-
-      return {
-        booking,
-        transactionUrl: orderResponse.data?.[0]?.transactionUrl,
-      };
+      const order = orderResponse.data?.[0];
+      if (order?.sbiOrderRefNumber) await this.prisma.booking.update({ where: { id: booking.id }, data: { sbiOrderRefNumber: String(order.sbiOrderRefNumber) } });
+      if (!order?.transactionUrl) throw new Error('Missing SBI checkout URL');
+      return { booking, transactionUrl: order.transactionUrl };
+    } catch {
+      this.logger.warn('SBI order creation unresolved for booking ' + booking.id + '; scheduled verification will retry.');
+      return { booking, paymentInitiationPending: true };
     }
-
-    return booking;
   }
 
   async paymentStatus(bookingId: string, token: string) {
@@ -189,6 +173,7 @@ export class BookingsService {
     const result = await this.prisma.$transaction(async (tx) => {
       const booking = await tx.booking.findFirst({ where: { id: bookingId, eventId }, include: { event: true } });
       if (!booking) throw new NotFoundException('Booking not found.');
+      if (booking.paymentMethod === 'sbiepay') throw new BadRequestException('SBI ePay payments are verified automatically and cannot be changed manually.');
       if (booking.paymentStatus === 'paid') {
         if (dto.status !== 'approved') throw new BadRequestException('Completed payments cannot be changed through registration review.');
         return { booking, notify: false };
@@ -215,25 +200,74 @@ export class BookingsService {
     return result.booking;
   }
 
-  async handleSbiEpayCallback(request: any, response: any) {
-    const encData =
-      request.query?.encData ??
-      request.body?.encData;
-
-    console.log('SBI ePay encData received:', !!encData);
-
-    if (!encData || typeof encData !== 'string') {
-      return response.status(400).send('Missing encData');
+  async verifySbiOrder(bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking || booking.paymentMethod !== 'sbiepay' || !booking.merchantOrderNumber || booking.paymentStatus !== 'pending') return;
+    await this.prisma.booking.update({ where: { id: booking.id }, data: { orderLastCheckedAt: new Date() } });
+    const orderSearchDetails = {
+      orderAmount: booking.amount, orderRefNumber: booking.merchantOrderNumber,
+      ...(booking.sbiOrderRefNumber ? { sbiOrderRefNumber: booking.sbiOrderRefNumber } : {}),
+      ...(booking.atrnNumber ? { atrnNumber: booking.atrnNumber } : {}),
+    };
+    const response = await this.sbiepay.searchOrder(orderSearchDetails);
+    // API envelope status and transaction status never decide fulfillment.
+    // SBI SDK returns data: [[{ orderInfo, paymentInfo: [...] }]].
+    // Also support the flat response used by earlier SDK versions.
+    const rows = Array.isArray(response.data) ? response.data.flat(Infinity) : [];
+    const row = rows.find((item: any) => (item?.orderInfo ?? item)?.orderRefNumber === booking.merchantOrderNumber);
+    const orderInfo = row?.orderInfo ?? row;
+    const payments = Array.isArray(row?.paymentInfo) ? row.paymentInfo : [];
+    const payment = [...payments].reverse().find((item: any) => Number(item?.orderAmount) === booking.amount);
+    const order = orderInfo ? {
+      ...orderInfo,
+      orderAmount: orderInfo.orderAmount ?? payment?.orderAmount,
+      atrnNumber: payment?.atrnNumber ?? orderInfo.atrnNumber,
+    } : null;
+    if (!order || !Number.isFinite(Number(order.orderAmount)) || Number(order.orderAmount) !== booking.amount || typeof order.orderStatus !== 'string') {
+      throw new Error('SBI search response did not match the stored order and amount');
     }
-
-    const decoded = await this.sbiepay.decodeCallback(encData);
-
-    console.log('SBI ePay decoded callback:', decoded);
-
-    return response.json({
-      message: 'Callback decoded successfully',
-      data: decoded,
-    });
+    const orderStatus = order.orderStatus.trim().toUpperCase();
+    const success = orderStatus === 'PAID' || orderStatus === 'SUCCESS';
+    const failed = orderStatus === 'FAIL' || orderStatus === 'FAILED';
+    const result = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.booking.findUnique({ where: { id: booking.id }, include: { event: true } });
+      if (!current || current.paymentStatus !== 'pending') return null;
+      const hasCapacity = current.event.capacity <= 0 || current.event.attendees + current.seats <= current.event.capacity;
+      const approve = success && hasCapacity;
+      const updated = await tx.booking.update({ where: { id: current.id }, data: {
+        orderStatus,
+        ...(order.sbiOrderRefNumber ? { sbiOrderRefNumber: String(order.sbiOrderRefNumber) } : {}),
+        ...(order.atrnNumber ? { atrnNumber: String(order.atrnNumber), transactionId: String(order.atrnNumber) } : {}),
+        ...(success ? { paymentStatus: 'paid', paidAt: new Date(), registrationStatus: approve ? 'approved' : 'pending', status: approve ? 'confirmed' : 'pending', rejectionReason: approve ? null : 'Payment received, but no seats remain. Please contact the organizer.' } : {}),
+        ...(failed ? { paymentStatus: 'failed', registrationStatus: 'rejected', status: 'cancelled', rejectionReason: 'SBI ePay reported that the order failed.' } : {}),
+      }, include: { event: true } });
+      if (approve) await tx.event.update({ where: { id: current.eventId }, data: {
+        attendees: { increment: current.seats },
+        ...(current.event.capacity > 0 && current.event.attendees + current.seats >= current.event.capacity ? { status: 'sold-out' } : {}),
+      } });
+      return approve ? updated : null;
+    }, { isolationLevel: 'Serializable' });
+    if (result) await this.sendTicketEmail(result, result.event);
   }
 
+  async handleSbiEpayCallback(request: any, response: any) {
+    const encData = request.query?.encData ?? request.body?.encData;
+    if (!encData || typeof encData !== 'string') return response.status(400).send('Missing encData');
+    try {
+      const decoded = await this.sbiepay.decodeCallback(encData);
+      const payload = typeof decoded === 'string' ? JSON.parse(decoded) : decoded;
+      const data = payload?.data ?? payload;
+      const row = Array.isArray(data) ? data.flat(Infinity)[0] : data;
+      const details = row?.orderInfo ?? row;
+      if (typeof details?.orderRefNumber !== 'string') return response.status(400).send('Missing merchant order number');
+      const booking = await this.prisma.booking.findUnique({ where: { merchantOrderNumber: details.orderRefNumber } });
+      if (!booking) return response.status(404).send('Order not found');
+      try { await this.verifySbiOrder(booking.id); }
+      catch { this.logger.warn('Callback verification deferred to scheduled search for booking ' + booking.id); }
+      const appUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',')[0].trim().replace(/\/$/, '');
+      return response.redirect(303, appUrl + '/payment-status/' + encodeURIComponent(booking.id) + '#token=' + encodeURIComponent(booking.paymentAccessToken));
+    } catch {
+      return response.status(400).send('Invalid SBI callback');
+    }
+  }
 }

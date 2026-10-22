@@ -104,6 +104,7 @@ model Event {
   venue         String            @default("")
   capacity      Int               @default(0)
   attendees     Int               @default(0)
+  eventType     String            @default("free")
   price         Float             @default(0)
   status        String            @default("draft")
   description   String            @default("")
@@ -184,6 +185,11 @@ model Booking {
   /// Attendee Management capability: check-in/check-out at the door.
   checkedIn          Boolean   @default(false)
   checkedInAt        DateTime?
+  merchantOrderNumber String? @unique
+  sbiOrderRefNumber   String?
+  atrnNumber          String?
+  orderStatus        String?
+  orderLastCheckedAt DateTime?
   paymentProof       String?
   paymentAccessToken String    @unique @default(uuid())
   rejectionReason    String?
@@ -192,6 +198,7 @@ model Booking {
 
   @@index([eventId])
   @@index([userId])
+  @@index([paymentMethod, paymentStatus, orderLastCheckedAt])
   @@map("bookings")
 }
 

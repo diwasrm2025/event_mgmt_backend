@@ -38,9 +38,8 @@ export class AuthService {
     };
   }
 
-  /** New accounts default to ORGANIZER — Super Admin is never
-   * self-assignable, only granted by an existing Super Admin (or the seed
-   * script). */
+  /** Public signups are attendees. Event-creator access is granted by a
+   * Super Admin rather than being self-assigned during registration. */
   async signup(dto: SignupDto) {
     const email = dto.email.toLowerCase().trim();
     const existing = await this.prisma.user.findUnique({ where: { email } });
@@ -48,7 +47,7 @@ export class AuthService {
       throw new ConflictException('An account with that email already exists.');
     }
 
-    const organizerRole = await this.prisma.role.findUniqueOrThrow({ where: { name: SYSTEM_ROLES.ORGANIZER } });
+    const attendeeRole = await this.prisma.role.findUniqueOrThrow({ where: { name: SYSTEM_ROLES.ATTENDEE } });
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
     const user = await this.prisma.user.create({
@@ -56,7 +55,7 @@ export class AuthService {
         name: dto.name.trim(),
         email,
         password: passwordHash,
-        roleId: organizerRole.id,
+        roleId: attendeeRole.id,
       },
       include: { role: true },
     });

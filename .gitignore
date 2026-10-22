@@ -1,6 +1,6 @@
 # dependencies
 /node_modules
-
+/.npm-cache
 # build
 /dist
 
@@ -40,5 +40,6 @@ Thumbs.db
 .idea/
 
 # Misc
+.npm/
 *.swp
 *.swo

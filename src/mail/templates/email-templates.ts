@@ -478,6 +478,7 @@ export interface TicketEmailContext {
 
 export function renderTicketEmail(ctx: TicketEmailContext): string {
   const isPaid = ctx.paymentStatus === 'paid';
+  const isFree = !ctx.paymentMethod || ctx.paymentMethod === 'free';
   const statusLabel = isPaid ? 'Confirmed' : 'Pending Payment';
   const statusDot = isPaid ? '#22c55e' : '#f59e0b';
   const shortRef = ctx.bookingId.replace(/-/g, '').slice(0, 10).toUpperCase();
@@ -577,8 +578,8 @@ export function renderTicketEmail(ctx: TicketEmailContext): string {
                 </td>
                 <td style="width:12px;"></td>
                 <td style="background-color:#f8fafc;border:1px solid #eef0f4;border-radius:10px;padding:10px 14px;">
-                  <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;">Payment</div>
-                  <div style="font-size:13px;font-weight:700;color:#0f172a;margin-top:2px;">${ctx.paymentMethod ? ctx.paymentMethod.toUpperCase() : 'FREE'}</div>
+                  <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;">${isFree ? 'Registration' : 'Payment'}</div>
+                  <div style="font-size:13px;font-weight:700;color:#0f172a;margin-top:2px;">${isFree ? 'Free event · no payment required' : ctx.paymentMethod?.toUpperCase()}</div>
                 </td>
               </tr>
             </table>
