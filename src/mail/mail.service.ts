@@ -19,7 +19,7 @@ export class MailService {
       process.env.BREVO_FROM_EMAIL ||
       process.env.SMTP_FROM ||
       'no-reply@pulseframe.app';
-    this.brevoFromName = process.env.MAIL_FROM_NAME || 'Pulseframe Events';
+    this.brevoFromName = process.env.MAIL_FROM_NAME || 'Trichy SRM Events';
 
     if (smtpHost) {
       const port = Number(process.env.SMTP_PORT) || 587;

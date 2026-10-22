@@ -57,7 +57,7 @@ function baseLayout(content: string): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pulseframe Events</title>
+  <title>Trichy SRM Events</title>
 </head>
 <body style="margin: 0; padding: 0;font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" padding: 40px 16px;">
@@ -72,7 +72,7 @@ function baseLayout(content: string): string {
                 <tr>
                   <td>
                     <div style="display: inline-block; background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 10px; padding: 6px 14px; font-weight: 700; font-size: 15px; color: #ffffff; letter-spacing: -0.02em;">
-                      ⚡ Pulseframe Events
+                      ⚡ SRM Events
                     </div>
                   </td>
                 </tr>
@@ -90,7 +90,7 @@ function baseLayout(content: string): string {
           <!-- Footer -->
           <tr>
             <td style="background-color: #f8fafc; padding: 24px 36px; border-top: 1px solid #f1f5f9; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5;">
-              <p style="margin: 0 0 6px 0;">This automated notification was sent by <strong>Pulseframe Events Platform</strong>.</p>
+              <p style="margin: 0 0 6px 0;">This automated notification was sent by <strong>Trichy SRM Events Platform</strong>.</p>
               <p style="margin: 0;">You received this because access to an event was granted or modified for <strong>you</strong>.</p>
             </td>
           </tr>
@@ -374,7 +374,7 @@ export function bookingTicketEmail(ctx: BookingTicketEmailContext): string {
         <table role="presentation" width="100%" style="max-width:560px; background:#ffffff; border-radius:20px; overflow:hidden; box-shadow:0 20px 40px -15px rgba(0,0,0,0.15);">
           <tr>
             <td style="background:linear-gradient(135deg,#6d28d9 0%,#7c3aed 50%,#8b5cf6 100%); padding:28px 36px;">
-              <div style="font-weight:800; font-size:16px; color:#fff; letter-spacing:-0.01em;">⚡ Pulseframe Events</div>
+              <div style="font-weight:800; font-size:16px; color:#fff; letter-spacing:-0.01em;">⚡ Trichy SRM Events</div>
               <div style="font-size:12px; color:rgba(255,255,255,0.7); margin-top:4px;">Event Management Platform</div>
             </td>
           </tr>
@@ -385,7 +385,7 @@ export function bookingTicketEmail(ctx: BookingTicketEmailContext): string {
           </tr>
           <tr>
             <td style="background:#f8fafc; padding:20px 36px; border-top:1px solid #f1f5f9; font-size:11px; color:#94a3b8; text-align:center; line-height:1.5;">
-              <p style="margin:0;">Sent to <strong>${ctx.email}</strong> by Pulseframe Events Platform.</p>
+              <p style="margin:0;">Sent to <strong>${ctx.email}</strong> by Trichy SRM Events Platform.</p>
             </td>
           </tr>
         </table>
@@ -411,13 +411,13 @@ export function welcomeNewUserEmail(ctx: WelcomeEmailContext): string {
   return `
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Welcome to Pulseframe</title></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Welcome to SRM Events</title></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:40px 16px;">
     <tr><td align="center">
       <table role="presentation" width="100%" style="max-width:540px;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 20px 40px -15px rgba(0,0,0,0.12);">
         <tr><td style="background:linear-gradient(135deg,#6d28d9,#7c3aed,#8b5cf6);padding:30px 36px;">
-          <div style="font-weight:800;font-size:16px;color:#fff;">⚡ Pulseframe Events</div>
+          <div style="font-weight:800;font-size:16px;color:#fff;">⚡ Trichy SRM Events</div>
         </td></tr>
         <tr><td style="padding:36px;">
           <h1 style="margin:0 0 12px;font-size:24px;font-weight:800;color:#0f172a;">Welcome aboard, ${ctx.name}! 🎉</h1>
@@ -431,7 +431,7 @@ export function welcomeNewUserEmail(ctx: WelcomeEmailContext): string {
           </div>
         </td></tr>
         <tr><td style="background:#f8fafc;padding:18px 36px;border-top:1px solid #f1f5f9;font-size:11px;color:#94a3b8;text-align:center;">
-          <p style="margin:0;">Sent to ${ctx.email} by Pulseframe Events Platform.</p>
+          <p style="margin:0;">Sent to ${ctx.email} by Trichy SRM Events Platform.</p>
         </td></tr>
       </table>
     </td></tr>
@@ -499,7 +499,7 @@ export function renderTicketEmail(ctx: TicketEmailContext): string {
       <!-- Wordmark -->
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;margin-bottom:18px;">
         <tr>
-          <td style="font-size:13px;font-weight:800;letter-spacing:0.08em;color:#334155;text-transform:uppercase;">Pulseframe Events</td>
+          <td style="font-size:13px;font-weight:800;letter-spacing:0.08em;color:#334155;text-transform:uppercase;">Trichy SRM Events</td>
           <td align="right">
             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background-color:${statusDot};margin-right:6px;vertical-align:middle;"></span>
             <span style="font-size:12px;font-weight:700;color:#334155;vertical-align:middle;letter-spacing:0.02em;">${statusLabel}</span>
@@ -609,7 +609,7 @@ export function renderTicketEmail(ctx: TicketEmailContext): string {
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;margin-top:18px;">
         <tr>
           <td align="center" style="font-size:11px;color:#94a3b8;line-height:1.6;">
-            Sent to ${ctx.attendeeEmail} by Pulseframe Events Platform.
+            Sent to ${ctx.attendeeEmail} by Trichy SRM Events Platform.
           </td>
         </tr>
       </table>
@@ -631,7 +631,7 @@ export function roleUpdateEmail(ctx: RoleUpdateEmailContext): string {
     <tr><td align="center">
       <table role="presentation" width="100%" style="max-width:540px;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 20px 40px -15px rgba(0,0,0,0.12);">
         <tr><td style="background:linear-gradient(135deg,#6d28d9,#7c3aed);padding:28px 36px;">
-          <div style="font-weight:800;font-size:16px;color:#fff;">⚡ Pulseframe Events</div>
+          <div style="font-weight:800;font-size:16px;color:#fff;">⚡ Trichy SRM Events</div>
         </td></tr>
         <tr><td style="padding:36px;">
           <h1 style="margin:0 0 12px;font-size:22px;font-weight:800;color:#0f172a;">Your Role Has Been Updated 🔑</h1>
@@ -645,7 +645,7 @@ export function roleUpdateEmail(ctx: RoleUpdateEmailContext): string {
           </div>
         </td></tr>
         <tr><td style="background:#f8fafc;padding:18px 36px;border-top:1px solid #f1f5f9;font-size:11px;color:#94a3b8;text-align:center;">
-          Sent to ${ctx.email} by Pulseframe Events Platform.
+          Sent to ${ctx.email} by Trichy SRM Events Platform.
         </td></tr>
       </table>
     </td></tr>

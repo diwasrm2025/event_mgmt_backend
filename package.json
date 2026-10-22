@@ -1,7 +1,7 @@
 {
   "name": "pulseframe-backend",
   "version": "1.0.0",
-  "description": "Pulseframe Events API - NestJS + Prisma",
+  "description": "Trichy SRM Events API - NestJS + Prisma",
   "private": true,
   "license": "MIT",
   "scripts": {
