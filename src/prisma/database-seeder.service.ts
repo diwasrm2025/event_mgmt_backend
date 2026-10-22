@@ -4,7 +4,7 @@ import { PrismaService } from './prisma.service';
 import * as bcrypt from 'bcryptjs';
 import { SYSTEM_ROLE_DEFINITIONS, SYSTEM_ROLES } from '../common/permissions';
 
-const DEFAULT_SUPER_ADMIN_EMAIL = 'superadmin@pulseframe.app';
+const DEFAULT_SUPER_ADMIN_EMAIL = 'superadmin@srmtrichy.app';
 const DEFAULT_SUPER_ADMIN_USERNAME = 'superadmin';
 const DEFAULT_SUPER_ADMIN_PASSWORD = 'SuperAdminPass2026!';
 

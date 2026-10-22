@@ -47,7 +47,7 @@ async function bootstrap() {
   const port = config.get<number>('PORT') || 4000;
   await app.listen(port);
   // eslint-disable-next-line no-console
-  console.log(`Pulseframe API running on http://localhost:${port}/api`);
+  console.log(`SRM Trichy API running on http://localhost:${port}/api`);
 }
 
 bootstrap();

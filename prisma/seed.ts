@@ -36,7 +36,7 @@ async function main() {
   // --- Demo users. Sign in with these at /signin, or sign up your own —
   // the very first account anyone creates is an ORGANIZER by default.
   // Only an existing Super Admin (or this seed script) can grant SUPER_ADMIN.
-  const email = 'demo.organizer@pulseframe.app';
+  const email = 'demo.organizer@srmtrichy.app';
   const user =
     (await prisma.user.findUnique({ where: { email } })) ||
     (await prisma.user.create({
@@ -48,7 +48,7 @@ async function main() {
       },
     }));
 
-  const superAdminEmail = (process.env.SUPER_ADMIN_EMAIL || process.env.ADMIN_EMAIL || 'superadmin@pulseframe.app').toLowerCase().trim();
+  const superAdminEmail = (process.env.SUPER_ADMIN_EMAIL || process.env.ADMIN_EMAIL || 'superadmin@srmtrichy.app').toLowerCase().trim();
   const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || 'SuperAdminPass2026!';
   const superAdminPasswordHash = await bcrypt.hash(superAdminPassword, 10);
 
@@ -70,8 +70,8 @@ async function main() {
     });
   }
 
-  // Also keep default admin@pulseframe.app if different
-  const adminEmail = (process.env.ADMIN_EMAIL || 'admin@pulseframe.app').toLowerCase().trim();
+  // Also keep default admin@srmtrichy.app if different
+  const adminEmail = (process.env.ADMIN_EMAIL || 'admin@srmtrichy.app').toLowerCase().trim();
   if (adminEmail !== superAdminEmail) {
     const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
     if (!existingAdmin) {

@@ -112,11 +112,11 @@ export function renderNewUserAccessGrantedEmail(ctx: PermissionEmailContext): st
 
   const content = `
     <h1 style="margin: 0 0 12px 0; font-size: 24px; font-weight: 700; color: #0f172a; letter-spacing: -0.02em;">
-      Welcome to Pulseframe! 🎉
+      Welcome to SRM Trichy
     </h1>
     <p style="margin: 0 0 24px 0; font-size: 15px; line-height: 1.6; color: #334155;">
       Hello <strong>${ctx.recipientName}</strong>,<br>
-      ${inviterText} has created a Pulseframe account for you and granted you access to manage the event <strong style="color: #4f46e5;">"${ctx.eventTitle}"</strong>.
+      ${inviterText} has created a SRM Trichy account for you and granted you access to manage the event <strong style="color: #4f46e5;">"${ctx.eventTitle}"</strong>.
     </p>
 
     <!-- Event Summary Card -->
@@ -249,7 +249,7 @@ export function renderAccessRevokedEmail(ctx: PermissionEmailContext): string {
     </p>
     <div style="text-align: center; margin: 32px 0 16px 0;">
       <a href="${ctx.ctaHref}" style="display: inline-block; background: #475569; color: #ffffff; font-weight: 600; font-size: 15px; text-decoration: none; padding: 12px 28px; border-radius: 10px;">
-        Go to Pulseframe Dashboard
+        Go to Trichy SRM dashboard
       </a>
     </div>
   `;
@@ -421,7 +421,7 @@ export function welcomeNewUserEmail(ctx: WelcomeEmailContext): string {
         </td></tr>
         <tr><td style="padding:36px;">
           <h1 style="margin:0 0 12px;font-size:24px;font-weight:800;color:#0f172a;">Welcome aboard, ${ctx.name}! 🎉</h1>
-          <p style="margin:0 0 20px;font-size:15px;color:#334155;line-height:1.6;">Your Pulseframe account has been created. You now have access to the platform${ctx.roleName ? ` as a <strong>${ctx.roleName}</strong>` : ''}.</p>
+          <p style="margin:0 0 20px;font-size:15px;color:#334155;line-height:1.6;">Your SRM Trichy account has been created. You now have access to the platform${ctx.roleName ? ` as a <strong>${ctx.roleName}</strong>` : ''}.</p>
           <div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:12px;padding:18px;margin-bottom:24px;">
             <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#7c3aed;margin-bottom:8px;">Your Login</div>
             <div style="font-size:14px;color:#1e293b;margin-bottom:4px;">📧 <strong>Email:</strong> ${ctx.email}</div>
@@ -635,7 +635,7 @@ export function roleUpdateEmail(ctx: RoleUpdateEmailContext): string {
         </td></tr>
         <tr><td style="padding:36px;">
           <h1 style="margin:0 0 12px;font-size:22px;font-weight:800;color:#0f172a;">Your Role Has Been Updated 🔑</h1>
-          <p style="margin:0 0 20px;font-size:15px;color:#334155;line-height:1.6;">Hi <strong>${ctx.name}</strong>, an administrator has updated your role on the Pulseframe platform.</p>
+          <p style="margin:0 0 20px;font-size:15px;color:#334155;line-height:1.6;">Hi <strong>${ctx.name}</strong>, an administrator has updated your role on the SRM Trichy platform.</p>
           <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:18px;margin-bottom:24px;">
             ${ctx.oldRole ? `<div style="font-size:13px;color:#64748b;margin-bottom:8px;">Previous role: <span style="text-decoration:line-through;">${ctx.oldRole}</span></div>` : ''}
             <div style="font-size:16px;font-weight:700;color:#6d28d9;">New role: ${ctx.newRole}</div>

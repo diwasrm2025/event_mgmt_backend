@@ -24,7 +24,7 @@ async function main() {
     const organizerRole = await prisma.role.findUniqueOrThrow({ where: { name: permissions_1.SYSTEM_ROLES.ORGANIZER } });
     const superAdminRole = await prisma.role.findUniqueOrThrow({ where: { name: permissions_1.SYSTEM_ROLES.SUPER_ADMIN } });
     const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
-    const email = 'demo.organizer@pulseframe.app';
+    const email = 'demo.organizer@srmtrichy.app';
     const user = (await prisma.user.findUnique({ where: { email } })) ||
         (await prisma.user.create({
             data: {
@@ -34,7 +34,7 @@ async function main() {
                 roleId: organizerRole.id,
             },
         }));
-    const superAdminEmail = (process.env.SUPER_ADMIN_EMAIL || process.env.ADMIN_EMAIL || 'superadmin@pulseframe.app').toLowerCase().trim();
+    const superAdminEmail = (process.env.SUPER_ADMIN_EMAIL || process.env.ADMIN_EMAIL || 'superadmin@srmtrichy.app').toLowerCase().trim();
     const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || 'SuperAdminPass2026!';
     const superAdminPasswordHash = await bcrypt.hash(superAdminPassword, 10);
     let superAdminUser = await prisma.user.findUnique({ where: { email: superAdminEmail } });
@@ -54,7 +54,7 @@ async function main() {
             data: { roleId: superAdminRole.id, password: superAdminPasswordHash },
         });
     }
-    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@pulseframe.app').toLowerCase().trim();
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@srmtrichy.app').toLowerCase().trim();
     if (adminEmail !== superAdminEmail) {
         const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
         if (!existingAdmin) {
