@@ -1,3 +1,4 @@
+import { ageThisYear, isDobField } from './registration';
 import { randomUUID } from 'crypto';
 import { BadRequestException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -46,12 +47,14 @@ export class BookingsService {
       include: { fields: { orderBy: { order: 'asc' } } },
     });
     if (!event) throw new NotFoundException('This event is not open for booking.');
+    if (event.registrationDeadline && event.registrationDeadline.getTime() <= Date.now()) throw new BadRequestException('Event registration has been closed.');
     return event;
   }
 
   private validateResponses(event: { fields: { name: string; label: string; type: string; required: boolean; options: string[] }[] }, responses: Record<string, unknown>) {
     for (const field of event.fields) {
       const value = responses?.[field.name];
+      if (isDobField(field) && value && ageThisYear(value) === null) throw new BadRequestException('Enter a valid date of birth that is not in the future.');
       const isEmpty = value === undefined || value === null || value === '';
 
       if (field.type === 'checkbox' && value !== undefined && typeof value !== 'boolean') {
@@ -87,6 +90,7 @@ export class BookingsService {
     const merchantOrderNumber = isFree ? null : 'O' + randomUUID().replace(/-/g, '');
     const booking = await this.prisma.$transaction(async (tx) => {
       const current = await tx.event.findUniqueOrThrow({ where: { id: event.id } });
+      if (current.status !== 'published' || (current.registrationDeadline && current.registrationDeadline.getTime() <= Date.now())) throw new BadRequestException('Event registration has been closed.');
       if (current.capacity > 0 && current.attendees >= current.capacity) throw new BadRequestException('This event is sold out.');
       const created = await tx.booking.create({ data: {
         eventId: event.id, userId: userId ?? null, name: dto.name.trim(), email: dto.email.trim().toLowerCase(),

@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  IsDateString,
   IsArray,
   IsBoolean,
   IsIn,
@@ -24,6 +25,10 @@ export class CreateEventDto {
   @IsString()
   @MinLength(2, { message: 'Title must be at least 2 characters.' })
   title: string;
+
+  @IsOptional()
+  @IsDateString()
+  registrationDeadline?: string | null;
 
   @IsOptional()
   @IsIn(CATEGORIES, { message: `Category must be one of: ${CATEGORIES.join(', ')}` })

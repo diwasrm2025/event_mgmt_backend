@@ -158,6 +158,7 @@ export class EventsService {
       data: {
         title: dto.title.trim(),
         category: dto.category ?? 'Community',
+        registrationDeadline: dto.registrationDeadline ? new Date(dto.registrationDeadline) : null,
         date: dto.date ?? '',
         time: dto.time ?? '',
         eventMode: dto.eventMode ?? 'offline',
@@ -200,6 +201,7 @@ export class EventsService {
     }
 
     const data: Record<string, unknown> = { ...dto };
+    if (dto.registrationDeadline !== undefined) data.registrationDeadline = dto.registrationDeadline ? new Date(dto.registrationDeadline) : null;
     data.eventType = eventType;
     data.price = price;
     delete (data as { slug?: unknown }).slug;

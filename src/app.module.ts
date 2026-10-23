@@ -1,3 +1,4 @@
+import { QrCodesModule } from './qr-codes/qr-codes.module';
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
@@ -28,6 +29,7 @@ import { CompaniesModule } from './companies/companies.module';
         limit: 100,
       },
     ]),
+    QrCodesModule,
     PrismaModule,
     AuthModule,
     EventsModule,

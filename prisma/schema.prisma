@@ -39,6 +39,7 @@ model User {
   roleId           String
   password         String
   companyId        String?
+  qrCodes          QrCode[]
   activities       Activity[]
   bookings         Booking[]
   grantsMade       EventPermission[] @relation("PermissionGrantedBy")
@@ -124,6 +125,7 @@ model Event {
   companyId     String?
   eventMode     String            @default("offline")
   onlineUrl     String            @default("")
+  registrationDeadline DateTime?
   bookings      Booking[]
   fields        EventFormField[]
   permissions   EventPermission[]
@@ -249,4 +251,16 @@ model Company {
   users       User[]
 
   @@map("companies")
+}
+
+model QrCode {
+  id String @id @default(uuid())
+  title String
+  url String
+  ownerId String
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([ownerId])
+  @@map("qr_codes")
 }

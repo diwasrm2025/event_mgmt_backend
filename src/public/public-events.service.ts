@@ -29,12 +29,14 @@ export class PublicEventsService {
   async findPublished(filters: { search?: string; category?: string }) {
     const now = Date.now();
     const events = await this.prisma.event.findMany({
-      where: { status: { in: ['published', 'sold-out'] }, slug: { not: null } },
+      where: { status: { in: ['published', 'sold-out', 'completed'] }, slug: { not: null } },
       orderBy: { date: 'asc' },
     });
 
     return events
       .filter((event) => {
+        if (event.registrationDeadline && event.registrationDeadline.getTime() <= now) return true;
+        if (event.status === 'completed') return false;
         // Exclude events where date + time has expired
         const eventTime = parseDateTime(event.date, event.time);
         if (eventTime && eventTime < now) return false;
@@ -55,6 +57,7 @@ export class PublicEventsService {
       include: { fields: { orderBy: { order: 'asc' } } },
     });
     if (!event) throw new NotFoundException('This event could not be found.');
+    if (event.registrationDeadline && event.registrationDeadline.getTime() <= Date.now()) return { id: event.id, slug: event.slug, registrationDeadline: event.registrationDeadline, registrationClosed: true };
     return this.omitOwner(event);
   }
 }

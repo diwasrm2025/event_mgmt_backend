@@ -68,7 +68,7 @@ export class EventFieldsService {
     const data: Record<string, unknown> = { ...dto };
     if (typeof dto.label === 'string' && dto.label.trim() !== existing.label) {
       data.label = dto.label.trim();
-      data.name = await this.uniqueName(eventId, dto.label, fieldId);
+      // Preserve the answer key when the question label changes.
     }
 
     return this.prisma.eventFormField.update({ where: { id: fieldId }, data });
