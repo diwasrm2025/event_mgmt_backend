@@ -6,7 +6,7 @@ export class QueryEventsDto {
   search?: string;
 
   @IsOptional()
-  @IsIn(['Music', 'Conference', 'Workshop', 'Sports', 'Festival', 'Community'])
+  @IsString()
   category?: string;
 
   @IsOptional()

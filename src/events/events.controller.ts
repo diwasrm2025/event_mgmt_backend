@@ -111,6 +111,14 @@ export class EventsController {
     return this.eventsService.removeBanner(id, url);
   }
 
+  @UseGuards(EventAccessGuard)
+  @RequireEventAccess(EVENT_PERMISSION.EDIT)
+  @RequirePermissions(PERMISSIONS.EVENTS_CREATE)
+  @Post(':id/duplicate')
+  duplicate(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.eventsService.duplicate(id, user);
+  }
+
   /** Delete requires an EDIT-or-higher grant to reach the guard, but the
    * service enforces the stricter "owner or Super Admin only" rule on top
    * — a shared EDIT collaborator can manage content but not delete or

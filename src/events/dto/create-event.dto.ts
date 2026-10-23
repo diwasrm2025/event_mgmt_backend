@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsDateString,
@@ -31,7 +31,9 @@ export class CreateEventDto {
   registrationDeadline?: string | null;
 
   @IsOptional()
-  @IsIn(CATEGORIES, { message: `Category must be one of: ${CATEGORIES.join(', ')}` })
+  @IsString()
+  @MinLength(1)
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   category?: string;
 
   @IsOptional()

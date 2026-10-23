@@ -7,7 +7,9 @@ import { FinalizeEventDto } from './dto/finalize-event.dto';
 import { BANNERS_URL_PREFIX } from './banner-storage';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PERMISSIONS } from '../common/permissions';
-import { unlink } from 'fs/promises';
+import { unlink, copyFile } from 'fs/promises';
+import { randomUUID } from 'crypto';
+import { extname } from 'path';
 import { join } from 'path';
 
 function slugify(value: string) {
@@ -274,6 +276,32 @@ export class EventsService {
     await this.prisma.event.delete({ where: { id } });
     await this.logActivity(user.id, 'deleted', existing.title);
     return { success: true };
+  }
+
+  async duplicate(id: string, user: AuthUser) {
+    const source = await this.findOne(id);
+    const banners: string[] = [];
+    try {
+      for (const url of source.banners) {
+        if (!url.startsWith(BANNERS_URL_PREFIX + '/')) { banners.push(url); continue; }
+        const filename = randomUUID() + extname(url);
+        await copyFile(join(process.cwd(), 'uploads', 'banners', url.slice(BANNERS_URL_PREFIX.length + 1)), join(process.cwd(), 'uploads', 'banners', filename));
+        banners.push(BANNERS_URL_PREFIX + '/' + filename);
+      }
+      const result = await this.prisma.event.create({ data: {
+        title: source.title + ' copy', category: source.category, date: source.date, time: source.time,
+        venue: source.venue, capacity: source.capacity, eventType: source.eventType, price: source.price,
+        description: source.description, agenda: [...source.agenda], host: source.host, featured: source.featured,
+        eventMode: source.eventMode, onlineUrl: source.onlineUrl, registrationDeadline: source.registrationDeadline,
+        companyId: source.companyId, ownerId: user.id, banners, status: 'draft', attendees: 0, slug: null, wizardStep: 4,
+        fields: { create: source.fields.map(field => ({ name: field.name, label: field.label, type: field.type, required: field.required, options: [...field.options], order: field.order })) },
+      }, include: { fields: true } });
+      await this.logActivity(user.id, 'created', result.title).catch(() => undefined);
+      return result;
+    } catch (error) {
+      for (const banner of banners) if (!source.banners.includes(banner)) await this.deleteBannerFile(banner);
+      throw error;
+    }
   }
 
   async addBanner(id: string, file: Express.Multer.File) {
