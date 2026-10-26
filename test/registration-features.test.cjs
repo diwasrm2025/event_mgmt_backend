@@ -29,3 +29,23 @@ test('checkbox choice responses accept allowed selections and reject invalid or 
  assert.throws(()=>service.validateResponses(event,{diet:['Other']}),/listed choices/);
  assert.throws(()=>service.validateResponses(event,{diet:[]}),/is required/);
 });
+
+test('single checkboxes normalize legacy answers without bypassing required confirmation', () => {
+ const service = new BookingsService({}, {}, {});
+ const field = {name:'games',label:'Games for Bubbles (3-6 Years)',type:'checkbox',required:false,options:[]};
+ for (const [input, expected] of [[true,true],[false,false],['true',true],['false',false],['',false],[null,false]]) {
+  const responses = {games:input};
+  assert.doesNotThrow(()=>service.validateResponses({fields:[field]},responses));
+  assert.equal(responses.games,expected);
+ }
+ assert.doesNotThrow(()=>service.validateResponses({fields:[field]},{}));
+ for (const input of [false,'false','',null,undefined]) {
+  assert.throws(()=>service.validateResponses({fields:[{...field,required:true}]},{games:input}),/must be confirmed/);
+ }
+ for (const input of ['on','Other',[],1]) {
+  assert.throws(()=>service.validateResponses({fields:[field]},{games:input}),/must be a checkbox value/);
+ }
+ const responses = {games:'true'};
+ assert.doesNotThrow(()=>service.validateResponses({fields:[{...field,required:true}]},responses));
+ assert.equal(responses.games,true);
+});

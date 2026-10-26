@@ -54,6 +54,14 @@ export class BookingsService {
 
   private validateResponses(event: { fields: { name: string; label: string; type: string; required: boolean; options: string[] }[] }, responses: Record<string, unknown>) {
     for (const field of event.fields) {
+      // Older clients can serialize checkbox booleans as strings or send an
+      // empty answer for an unchecked box. Normalize only unambiguous values;
+      // never treat arbitrary nonempty strings (including "false") as truthy.
+      if (field.type === 'checkbox' && !field.options.length) {
+        const answer = responses?.[field.name];
+        if (answer === 'true') responses[field.name] = true;
+        else if (answer === 'false' || answer === '' || answer === null) responses[field.name] = false;
+      }
       const value = responses?.[field.name];
       if (isDobField(field) && value && ageThisYear(value) === null) throw new BadRequestException('Enter a valid date of birth that is not in the future.');
       const isEmpty = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
