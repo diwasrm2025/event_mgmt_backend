@@ -50,3 +50,21 @@ during startup. The payment client now initializes only when needed.
 The migration classifies existing events with a positive price as paid and
 events with a zero price as free. Do not disable request validation to bypass
 an outdated API deployment.
+
+## Checkbox choices rejected in production
+
+If a field such as `Games for Bubbles (3-6 Years)` has choices in the public
+event response but registration returns `must be a checkbox value`, check the
+running API deployment. Checkbox groups submit an array of selected option
+strings; single checkboxes without options submit a boolean. The current
+`src/bookings/bookings.service.ts` validates these separately.
+
+Deploy the backend commit containing checkbox choice validation to the Render
+service receiving the failed request. Use **Manual Deploy → Deploy latest
+commit**, and confirm that the deployed commit contains the change. If Render
+is already showing that commit, use **Clear build cache & deploy**. Confirm the
+build and start commands above, and that every API instance uses the new build.
+Restarting an old build alone does not compile or deploy local source changes.
+
+Reload the registration page and retry. Do not convert game selections to a
+boolean: that would discard which games the attendee selected.
