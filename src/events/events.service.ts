@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -7,10 +7,10 @@ import { FinalizeEventDto } from './dto/finalize-event.dto';
 import { BANNERS_DIR, BANNERS_URL_PREFIX } from './banner-storage';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PERMISSIONS } from '../common/permissions';
-import { unlink, copyFile } from 'fs/promises';
+import { unlink, copyFile, readFile } from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { basename, extname, join } from 'path';
-import sharp from 'sharp';
+const sharp: typeof import('sharp').default = require('sharp');
 
 function slugify(value: string) {
   return (
@@ -29,6 +29,8 @@ function randomSuffix() {
 
 @Injectable()
 export class EventsService {
+  private readonly logger = new Logger(EventsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async uniqueSlug(title: string, ignoreId?: string) {
@@ -318,10 +320,15 @@ export class EventsService {
     const filename = `${randomUUID()}.webp`;
     const outputPath = join(BANNERS_DIR, filename);
     try {
-      await sharp(file.path).webp({ quality: 85 }).toFile(outputPath);
+      const image = await readFile(file.path);
+      await sharp(image).rotate().webp({ quality: 85 }).toFile(outputPath);
       await unlink(file.path).catch(() => undefined);
-    } catch {
+    } catch (error) {
       await unlink(file.path).catch(() => undefined);
+      this.logger.error(
+        'Failed to convert uploaded event banner image.',
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new BadRequestException('The uploaded file is not a supported image.');
     }
     const url = `${BANNERS_URL_PREFIX}/${filename}`;
