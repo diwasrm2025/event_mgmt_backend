@@ -17,7 +17,7 @@ for (const [permissions, payment, checkin] of [
 ]) {
   test(`roster permissions and field selection: ${permissions.join('+')}`, async () => {
     const capabilities = rosterCapabilities({ permissions });
-    assert.deepEqual(capabilities, { canApprovePayment: payment, canCheckIn: checkin });
+    assert.deepEqual(capabilities, { canDelete: false, canApprovePayment: payment, canCheckIn: checkin });
     let selection;
     const service = new BookingsService({ booking: { findMany: async args => { selection = args.select; return []; } } }, {});
     await service.roster('event', capabilities);
@@ -42,6 +42,7 @@ test('HTTP routes enforce independent view, payment approval, and check-in acces
     } },
   };
   const service = {
+    deleteBooking: async () => ({ id: 'booking' }),
     roster: async (id, access) => [{ id: 'booking', name: 'Member', ...(access.canApprovePayment ? { paymentProof: 'private-proof' } : {}), ...(access.canCheckIn ? { checkedIn: false } : {}) }],
     toggleCheckIn: async () => ({ id: 'booking', checkedIn: true }),
     updateRegistrationStatus: async () => ({ id: 'booking', paymentStatus: 'paid', status: 'confirmed', registrationStatus: 'approved', event: { private: true }, paymentAccessToken: 'secret' }),
@@ -64,6 +65,8 @@ test('HTTP routes enforce independent view, payment approval, and check-in acces
       if (payment) { const result = await approval.json(); assert.equal(result.paymentAccessToken, undefined); assert.equal(result.event, undefined); }
       const check = await fetch(`${base}/bookings/event/event/booking/check-in`, { method: 'PATCH', headers });
       assert.equal(check.status, checkin ? 200 : 403, `${role} check-in`);
+      const deletion = await fetch(`${base}/bookings/event/event/booking`, { method: 'DELETE', headers });
+      assert.equal(deletion.status, role === 'owner' || role === 'super' ? 200 : 403, `${role} deletion`);
     }
     assert.equal((await fetch(`${base}/bookings/event/event`, { headers: { 'x-test-role': 'revoked' } })).status, 403);
     assert.equal((await fetch(`${base}/bookings/event/event`)).status, 403);

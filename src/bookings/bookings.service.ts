@@ -164,6 +164,25 @@ export class BookingsService {
     } });
   }
 
+  async deleteBooking(eventId: string, bookingId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const booking = await tx.booking.findFirst({ where: { id: bookingId, eventId }, include: { event: true } });
+      if (!booking) throw new NotFoundException('Booking not found.');
+      if (booking.paymentMethod === 'sbiepay' && booking.paymentStatus === 'pending') {
+        throw new BadRequestException('Wait until SBI payment verification finishes before deleting this registration.');
+      }
+      await tx.booking.delete({ where: { id: booking.id } });
+      if (booking.status === 'confirmed' && booking.registrationStatus === 'approved') {
+        const attendees = Math.max(0, booking.event.attendees - booking.seats);
+        await tx.event.update({ where: { id: eventId }, data: {
+          attendees,
+          ...(booking.event.status === 'sold-out' && (booking.event.capacity <= 0 || attendees < booking.event.capacity) ? { status: 'published' } : {}),
+        } });
+      }
+      return { id: booking.id };
+    }, { isolationLevel: 'Serializable' });
+  }
+
   async myBookings(userId: string) {
     return this.prisma.booking.findMany({
       where: { userId },

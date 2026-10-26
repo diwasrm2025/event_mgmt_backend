@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, Patch, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Header, Param, Patch, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { EventAccessGuard } from '../common/guards/event-access.guard';
@@ -11,7 +11,7 @@ import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dt
 export function rosterCapabilities(grant: unknown) {
   const all = grant === 'OWNER' || grant === 'MANAGE_ALL';
   const permissions = grant && typeof grant === 'object' ? (grant as { permissions?: string[] }).permissions ?? [] : [];
-  return { canApprovePayment: all || permissions.includes(EVENT_PERMISSION.PAYMENT_APPROVE), canCheckIn: all || permissions.includes(EVENT_PERMISSION.ATTENDEE) };
+  return { canDelete: all, canApprovePayment: all || permissions.includes(EVENT_PERMISSION.PAYMENT_APPROVE), canCheckIn: all || permissions.includes(EVENT_PERMISSION.ATTENDEE) };
 }
 
 @UseGuards(JwtAuthGuard)
@@ -48,6 +48,16 @@ export class BookingsController {
     const csv = [fields.join(','), ...rows.map(row => fields.map(field => escape((row as Record<string, unknown>)[field])).join(','))].join('\n');
     res.set('Content-Disposition', `attachment; filename="attendees-${eventId}.csv"`);
     return csv;
+  }
+
+  @UseGuards(EventAccessGuard)
+  @RequireEventAccess(EVENT_PERMISSION.VIEW, 'eventId')
+  @Delete('event/:eventId/:bookingId')
+  deleteBooking(@Param('eventId') eventId: string, @Param('bookingId') bookingId: string, @Req() request: Request) {
+    if (!rosterCapabilities((request as { eventGrant?: unknown }).eventGrant).canDelete) {
+      throw new ForbiddenException('Only the event owner or super admin can delete registrations.');
+    }
+    return this.bookingsService.deleteBooking(eventId, bookingId);
   }
 
   @UseGuards(EventAccessGuard)
