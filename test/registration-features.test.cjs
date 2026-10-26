@@ -23,3 +23,9 @@ test('renaming a question preserves the response key', async()=>{
  let data; const service = new EventFieldsService({eventFormField:{findFirst:async()=>({id:'f',name:'old_question',label:'Old question'}),update:async args=>{data=args.data;return data;}}});
  await service.update('e','f',{label:'New question'}); assert.equal(data.label,'New question'); assert.equal(data.name,undefined);
 });
+test('checkbox choice responses accept allowed selections and reject invalid or missing required choices',()=>{
+ const service = new BookingsService({}, {}, {}); const event = { fields:[{name:'diet',label:'Dietary needs',type:'checkbox',required:true,options:['Vegan','Gluten-free']}] };
+ assert.doesNotThrow(()=>service.validateResponses(event,{diet:['Vegan','Gluten-free']}));
+ assert.throws(()=>service.validateResponses(event,{diet:['Other']}),/listed choices/);
+ assert.throws(()=>service.validateResponses(event,{diet:[]}),/is required/);
+});

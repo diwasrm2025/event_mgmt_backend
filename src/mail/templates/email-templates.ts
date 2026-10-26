@@ -513,7 +513,7 @@ export function renderTicketEmail(ctx: TicketEmailContext): string {
         <!-- Hero stub: gradient background, opaque solid-color text -->
         <tr>
           <td style="border-radius:24px 24px 0 0;background-image:linear-gradient(135deg,#111827 0%,#312e81 55%,#7e22ce 100%);padding:34px 32px 78px;position:relative;">
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#c4b5fd;margin-bottom:10px;">Thank you for registering!</div>
+            <div style="display:inline-block;background-color:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.45);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#86efac;margin-bottom:12px;">✓ BOOKING CONFIRMED · TICKET</div>
             <div style="font-size:25px;font-weight:800;line-height:1.25;color:#ffffff;letter-spacing:-0.01em;">${ctx.eventTitle}</div>
             <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:18px;">
               <tr>
@@ -587,6 +587,8 @@ export function renderTicketEmail(ctx: TicketEmailContext): string {
           </td>
         </tr>
 
+       
+
         
 
         <!-- Guidelines -->
@@ -597,11 +599,6 @@ export function renderTicketEmail(ctx: TicketEmailContext): string {
               <li>Carry a valid photo ID matching the attendee name above.</li>
               <li>This pass is non-refundable and non-transferable.</li>
             </ul>
-            <div style="text-align:center;margin-top:22px;">
-              <a href="${ctx.ctaHref}" style="display:inline-block;background-image:linear-gradient(135deg,#4f46e5 0%,#7e22ce 100%);color:#ffffff;font-weight:700;font-size:14px;text-decoration:none;padding:13px 30px;border-radius:11px;letter-spacing:0.01em;">
-                View &amp; Manage Pass →
-              </a>
-            </div>
           </td>
         </tr>
       </table>

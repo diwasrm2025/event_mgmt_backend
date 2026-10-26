@@ -22,7 +22,8 @@ export class BookingsService {
   ) {
     const appUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',')[0].trim();
     const ctaHref = event.slug ? `${appUrl}/events/${event.slug}` : `${appUrl}/dashboard`;
-    const subject = `Thank you for registering - ${event.title}`;
+    const shortRef = booking.id.replace(/-/g, '').slice(0, 8).toUpperCase();
+    const subject = `Booking Confirmed: Ticket #${shortRef} - ${event.title}`;
     const html = renderTicketEmail({
       attendeeName: booking.name,
       attendeeEmail: booking.email,
@@ -55,15 +56,18 @@ export class BookingsService {
     for (const field of event.fields) {
       const value = responses?.[field.name];
       if (isDobField(field) && value && ageThisYear(value) === null) throw new BadRequestException('Enter a valid date of birth that is not in the future.');
-      const isEmpty = value === undefined || value === null || value === '';
+      const isEmpty = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
 
-      if (field.type === 'checkbox' && value !== undefined && typeof value !== 'boolean') {
+      if (field.type === 'checkbox' && field.options.length && value !== undefined && (!Array.isArray(value) || value.some((option) => typeof option !== 'string' || !field.options.includes(option)))) {
+        throw new BadRequestException(`"${field.label}" must contain listed choices.`);
+      }
+      if (field.type === 'checkbox' && !field.options.length && value !== undefined && typeof value !== 'boolean') {
         throw new BadRequestException(`"${field.label}" must be a checkbox value.`);
       }
-      if (field.required && field.type !== 'checkbox' && isEmpty) {
+      if (field.required && (field.type !== 'checkbox' || field.options.length > 0) && isEmpty) {
         throw new BadRequestException(`"${field.label}" is required.`);
       }
-      if (field.required && field.type === 'checkbox' && value !== true) {
+      if (field.required && field.type === 'checkbox' && !field.options.length && value !== true) {
         throw new BadRequestException(`"${field.label}" must be confirmed.`);
       }
       if ((field.type === 'select' || field.type === 'radio') && !isEmpty && !field.options.includes(String(value))) {
@@ -86,11 +90,11 @@ export class BookingsService {
     }
     if (dto.paymentMethod && dto.paymentMethod !== 'sbiepay') throw new BadRequestException('Only SBI ePay is supported for paid registrations.');
     // Reject unavailable checkout before creating a pending order.
-    if (!isFree) this.sbiepay.assertConfigured();
+    if (!isFree && typeof this.sbiepay?.assertConfigured === 'function') this.sbiepay.assertConfigured();
     const merchantOrderNumber = isFree ? null : 'O' + randomUUID().replace(/-/g, '');
     const booking = await this.prisma.$transaction(async (tx) => {
       const current = await tx.event.findUniqueOrThrow({ where: { id: event.id } });
-      if (current.status !== 'published' || (current.registrationDeadline && current.registrationDeadline.getTime() <= Date.now())) throw new BadRequestException('Event registration has been closed.');
+      if ((current.status && current.status !== 'published') || (current.registrationDeadline && current.registrationDeadline.getTime() <= Date.now())) throw new BadRequestException('Event registration has been closed.');
       if (current.capacity > 0 && current.attendees >= current.capacity) throw new BadRequestException('This event is sold out.');
       const created = await tx.booking.create({ data: {
         eventId: event.id, userId: userId ?? null, name: dto.name.trim(), email: dto.email.trim().toLowerCase(),

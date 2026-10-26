@@ -11,8 +11,6 @@ if (!existsSync(BANNERS_DIR)) {
   mkdirSync(BANNERS_DIR, { recursive: true });
 }
 
-const ALLOWED_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif)$/i;
-
 export const bannerStorage = diskStorage({
   destination: BANNERS_DIR,
   filename: (_req, file, callback) => {
@@ -21,8 +19,8 @@ export const bannerStorage = diskStorage({
 });
 
 export function bannerFileFilter(_req: unknown, file: Express.Multer.File, callback: (error: Error | null, accept: boolean) => void) {
-  if (!ALLOWED_EXTENSIONS.test(file.originalname)) {
-    callback(new BadRequestException('Only jpg, jpeg, png, webp, or gif images are allowed.'), false);
+  if (!file.mimetype.startsWith('image/')) {
+    callback(new BadRequestException('Only image files are allowed.'), false);
     return;
   }
   callback(null, true);

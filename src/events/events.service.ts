@@ -4,13 +4,13 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { QueryEventsDto } from './dto/query-events.dto';
 import { FinalizeEventDto } from './dto/finalize-event.dto';
-import { BANNERS_URL_PREFIX } from './banner-storage';
+import { BANNERS_DIR, BANNERS_URL_PREFIX } from './banner-storage';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PERMISSIONS } from '../common/permissions';
 import { unlink, copyFile } from 'fs/promises';
 import { randomUUID } from 'crypto';
-import { extname } from 'path';
-import { join } from 'path';
+import { basename, extname, join } from 'path';
+import sharp from 'sharp';
 
 function slugify(value: string) {
   return (
@@ -219,6 +219,11 @@ export class EventsService {
       data,
     });
 
+    if (dto.banners) {
+      const retainedBanners = new Set(dto.banners);
+      await Promise.all(existing.banners.filter((banner) => !retainedBanners.has(banner)).map((banner) => this.deleteBannerFile(banner)));
+    }
+
     await this.logActivity(actingUserId, 'updated', event.title);
     return event;
   }
@@ -307,14 +312,28 @@ export class EventsService {
   async addBanner(id: string, file: Express.Multer.File) {
     const existing = await this.findOne(id);
     if (existing.banners.length >= 8) {
+      await unlink(file.path).catch(() => undefined);
       throw new BadRequestException('You can add up to 8 banner images.');
     }
-    const url = `${BANNERS_URL_PREFIX}/${file.filename}`;
-    const event = await this.prisma.event.update({
-      where: { id },
-      data: { banners: { push: url } },
-    });
-    return event;
+    const filename = `${randomUUID()}.webp`;
+    const outputPath = join(BANNERS_DIR, filename);
+    try {
+      await sharp(file.path).webp({ quality: 85 }).toFile(outputPath);
+      await unlink(file.path).catch(() => undefined);
+    } catch {
+      await unlink(file.path).catch(() => undefined);
+      throw new BadRequestException('The uploaded file is not a supported image.');
+    }
+    const url = `${BANNERS_URL_PREFIX}/${filename}`;
+    try {
+      return await this.prisma.event.update({
+        where: { id },
+        data: { banners: { push: url } },
+      });
+    } catch (error) {
+      await unlink(outputPath).catch(() => undefined);
+      throw error;
+    }
   }
 
   async removeBanner(id: string, url: string) {
@@ -331,8 +350,8 @@ export class EventsService {
   }
 
   private async deleteBannerFile(url: string) {
-    if (!url.startsWith(BANNERS_URL_PREFIX)) return;
-    const filePath = join(process.cwd(), 'uploads', 'banners', url.replace(`${BANNERS_URL_PREFIX}/`, ''));
+    if (!url.startsWith(`${BANNERS_URL_PREFIX}/`)) return;
+    const filePath = join(BANNERS_DIR, basename(url));
     try {
       await unlink(filePath);
     } catch {
