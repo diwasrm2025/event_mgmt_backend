@@ -13,8 +13,16 @@ export class CreateBookingDto {
   phone?: string;
 
   @IsOptional()
-  @IsIn(['sbiepay'])
-  paymentMethod?: 'sbiepay';
+  @IsIn(['qr'])
+  paymentMethod?: 'qr';
+
+  @IsOptional()
+  @IsString()
+  transactionId?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentProof?: string;
 
   /** Answers keyed by the EventFormField.name for that event's custom fields. */
   @IsOptional()

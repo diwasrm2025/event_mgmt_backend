@@ -13,14 +13,16 @@ email with a thank-you message. Repeated approvals do not repeat the email
 or seat reservation. Free registrations complete immediately.
 
 The attendee's confirmation page refreshes status every 10 seconds using a
-private booking token. Pending and rejected submissions do not receive a
-confirmation email and cannot check in.
+private booking token. Pending submissions cannot check in. Rejected submissions receive an email
+with the administrator's reason and cannot check in. The event owner and all
+super admins receive submission and review outcome emails.
 
 Deployment: run `npm run prisma:deploy`, `npm run prisma:generate`, and rebuild
 and restart the backend and frontend. If Windows reports a locked Prisma
 engine DLL during generation, stop the backend before regenerating it.
 Configure the existing SMTP or Brevo mail transport for email delivery.
 MailService logs delivery failures; it does not automatically retry them.
+New SBI ePay checkout is paused. Existing SBI orders continue reconciliation.
 
 Verification: `node --test test/manual-payments.test.cjs` from `backend`.
 

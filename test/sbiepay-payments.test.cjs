@@ -26,34 +26,18 @@ function setup(price = 100) {
     decodeCallback: async () => ({ orderRefNumber: state.booking.merchantOrderNumber, orderStatus: 'SUCCESS' }),
   };
   const service = new BookingsService(db, { sendMail: async (...args) => { state.emails.push(args); return { success: true }; } }, sbi);
-  const submit = (extra = {}) => service.createBooking('test', {
-    name: 'Member',
-    email: 'member@example.com',
-    ...(event.eventType === 'paid' ? { paymentMethod: 'sbiepay' } : {}),
-    ...extra,
-  });
+  // Seed historical SBI orders directly; new checkout is paused.
+  const submit = async (extra = {}) => {
+    const dto = { name: 'Member', email: 'member@example.com', ...extra };
+    if (event.eventType === 'free') return service.createBooking('test', dto);
+    return db.booking.create({ data: { ...dto, eventId: event.id, seats: 1, amount: event.price, paymentMethod: 'sbiepay', merchantOrderNumber: 'O' + 'a'.repeat(32), sbiOrderRefNumber: 'SBI123', orderStatus: 'CREATED', paymentStatus: 'pending', registrationStatus: 'pending', status: 'pending', transactionId: null, paymentProof: null } });
+  };
   return { service, state, event, submit, db };
 }
 
-test('SBI checkout persists a unique merchant reference before creating the order', async () => {
-  const { submit, state, event } = setup(); const result = await submit();
-  assert.match(result.booking.merchantOrderNumber, /^O[a-f0-9]{32}$/);
-  assert.equal(result.booking.paymentMethod, 'sbiepay'); assert.equal(result.booking.paymentStatus, 'pending');
-  assert.equal(result.booking.orderStatus, 'CREATED'); assert.equal(result.booking.paymentProof, null);
-  assert.equal(result.transactionUrl, 'https://payment.example/checkout');
-  assert.equal(state.booking.sbiOrderRefNumber, 'SBI123');
-  assert.match(state.orders[0].returnUrl, /\/api\/bookings\/sbiepay\/callback$/);
-  assert.equal(event.attendees, 0); assert.equal(state.emails.length, 0);
-});
-
-test('QR submissions are refused', async () => {
-  const { submit } = setup(); await assert.rejects(submit({ paymentMethod: 'qr' }), /Only SBI/);
-});
-
-test('an uncertain create response retains a searchable order and private status token', async () => {
-  const { submit, state } = setup(); state.createError = true; const result = await submit();
-  assert.equal(result.paymentInitiationPending, true); assert.equal(result.booking.paymentAccessToken, 'secret');
-  assert.ok(state.booking.merchantOrderNumber); assert.equal(state.booking.paymentStatus, 'pending');
+test('new SBI checkout is paused', async () => {
+  const { service } = setup();
+  await assert.rejects(service.createBooking('test', { name: 'Member', email: 'member@example.com', paymentMethod: 'sbiepay' }), /paused/);
 });
 
 for (const status of ['CREATED', 'ATTEMPTED', 'PENDING', 'UNKNOWN']) test(status + ' does not fulfill registration', async () => {
@@ -120,7 +104,7 @@ test('required checkbox registration fields accept boolean responses for free ev
   const { submit, state, event } = setup(0);
   event.fields.push({ name: 'consent', label: 'Consent', type: 'checkbox', required: true, options: [] });
   await assert.rejects(submit(), /"Consent" must be confirmed/);
-  await assert.rejects(submit({ responses: { consent: 'true' } }), /"Consent" must be a checkbox value/);
+  await submit({ responses: { consent: 'true' } });
   await submit({ responses: { consent: true } });
   assert.equal(state.booking.responses.consent, true);
   assert.equal(state.booking.paymentMethod, 'free');

@@ -650,3 +650,14 @@ export function roleUpdateEmail(ctx: RoleUpdateEmailContext): string {
 </body></html>
   `;
 }
+
+export function renderPaymentReviewEmail(ctx: {
+  id: string; name: string; email: string; amount: number; eventTitle: string;
+  transactionId?: string | null; rejectionReason?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+}): string {
+  const esc = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
+  const heading = ctx.status === 'pending' ? 'Payment submitted for review' : ctx.status === 'approved' ? 'Payment confirmed' : 'Payment could not be verified';
+  const message = ctx.status === 'pending' ? 'A payment screenshot has been submitted. Please review the screenshot and transaction in the attendee roster before confirming registration.' : ctx.status === 'approved' ? 'Payment has been verified and registration is confirmed. Thank you for your payment.' : 'The submitted payment was rejected after review. Registration is not confirmed. Please contact the event organizer with your transaction details to resolve this.';
+  return baseLayout('<h1>' + heading + '</h1><p>' + message + '</p><p><strong>Event:</strong> ' + esc(ctx.eventTitle) + '</p><p><strong>Attendee:</strong> ' + esc(ctx.name) + ' (' + esc(ctx.email) + ')</p><p><strong>Amount:</strong> INR ' + ctx.amount.toFixed(2) + '</p><p><strong>Booking reference:</strong> ' + esc(ctx.id) + '</p><p><strong>Transaction / UTR:</strong> ' + esc(ctx.transactionId || 'Not provided') + '</p>' + (ctx.status === 'rejected' ? '<p><strong>Reason for rejection:</strong> ' + esc(ctx.rejectionReason || 'Please contact the organizer.') + '</p>' : ''));
+}

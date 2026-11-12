@@ -1,9 +1,9 @@
 import { ageThisYear, isDobField } from './registration';
-import { randomUUID } from 'crypto';
+const sharp: typeof import('sharp').default = require('sharp');
 import { BadRequestException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
-import { renderTicketEmail } from '../mail/templates/email-templates';
+import { renderTicketEmail, renderPaymentReviewEmail } from '../mail/templates/email-templates';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
 import { SbiepayService } from '../sbiepay/sbiepay.service';
@@ -23,7 +23,7 @@ export class BookingsService {
     const appUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',')[0].trim();
     const ctaHref = event.slug ? `${appUrl}/events/${event.slug}` : `${appUrl}/dashboard`;
     const shortRef = booking.id.replace(/-/g, '').slice(0, 8).toUpperCase();
-    const subject = `Booking Confirmed: Ticket #${shortRef} - ${event.title}`;
+    const subject = `${booking.paymentMethod === 'free' ? 'Booking Confirmed' : 'Payment Confirmed'}: Ticket #${shortRef} - ${event.title}`;
     const html = renderTicketEmail({
       attendeeName: booking.name,
       attendeeEmail: booking.email,
@@ -84,7 +84,7 @@ export class BookingsService {
     }
   }
 
-  /** Paid registrations are settled only by SBI Order Search. */
+  /** New paid registrations require QR evidence and administrator review. */
   async createBooking(slug: string, dto: CreateBookingDto, userId?: string | null) {
     
     const event = await this.findBookableEvent(slug);
@@ -96,10 +96,18 @@ export class BookingsService {
     if (!isFree && event.price <= 0) {
       throw new BadRequestException('This paid event does not have a valid ticket price.');
     }
-    if (dto.paymentMethod && dto.paymentMethod !== 'sbiepay') throw new BadRequestException('Only SBI ePay is supported for paid registrations.');
-    // Reject unavailable checkout before creating a pending order.
-    if (!isFree && typeof this.sbiepay?.assertConfigured === 'function') this.sbiepay.assertConfigured();
-    const merchantOrderNumber = isFree ? null : 'O' + randomUUID().replace(/-/g, '');
+    if (!isFree) {
+      if (dto.paymentMethod !== 'qr') throw new BadRequestException('SBI ePay is paused. Please pay by QR and upload your screenshot.');
+      if (!/^[A-Za-z0-9-]{6,100}$/.test(dto.transactionId?.trim() || '')) throw new BadRequestException('Enter a valid transaction ID / UTR (6 to 100 characters).');
+      const match = dto.paymentProof?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
+      if (!match) throw new BadRequestException('Attach a PNG, JPEG or WebP screenshot.');
+      const bytes = Buffer.from(match[2], 'base64');
+      if (!bytes.length || bytes.length > 5 * 1024 * 1024) throw new BadRequestException('Screenshot must be no larger than 5 MB.');
+      try {
+        const metadata = await sharp(bytes).metadata();
+        if (!['png', 'jpeg', 'webp'].includes(metadata.format || '')) throw new Error('Invalid image');
+      } catch { throw new BadRequestException('The screenshot is not a valid image.'); }
+    }
     const booking = await this.prisma.$transaction(async (tx) => {
       const current = await tx.event.findUniqueOrThrow({ where: { id: event.id } });
       if ((current.status && current.status !== 'published') || (current.registrationDeadline && current.registrationDeadline.getTime() <= Date.now())) throw new BadRequestException('Event registration has been closed.');
@@ -108,14 +116,12 @@ export class BookingsService {
         eventId: event.id, userId: userId ?? null, name: dto.name.trim(), email: dto.email.trim().toLowerCase(),
         phone: dto.phone?.trim() ?? '', seats: 1, responses: (dto.responses ?? {}) as object,
         amount: Math.max(0, event.price), 
-        paymentMethod: isFree ? 'free' : 'sbiepay',
-        merchantOrderNumber,
-        orderStatus: isFree ? null : 'CREATED',
+        paymentMethod: isFree ? 'free' : 'qr',
         paymentStatus: isFree ? 'paid' : 'pending',
         status: isFree ? 'confirmed' : 'pending',
         registrationStatus: isFree ? 'approved' : 'pending',
-        transactionId: null,
-        paymentProof: null,
+        transactionId: isFree ? null : dto.transactionId!.trim(),
+        paymentProof: isFree ? null : dto.paymentProof!,
         paidAt: isFree ? new Date() : null,
       } });
       if (isFree) await tx.event.update({ where: { id: event.id }, data: {
@@ -128,21 +134,23 @@ export class BookingsService {
       return booking;
     }
 
-    // Persist the merchant reference before contacting SBI so uncertain create responses can be searched.
+    await this.notifyPaymentReview(booking, event, 'pending');
+    return booking;
+  }
+
+  private async notifyPaymentReview(
+    booking: { id: string; name: string; email: string; amount: number; transactionId?: string | null; rejectionReason?: string | null },
+    event: { id: string; title: string; ownerId: string },
+    status: 'pending' | 'approved' | 'rejected',
+  ) {
+    const html = renderPaymentReviewEmail({ ...booking, eventTitle: event.title, status });
+    if (status === 'rejected') await this.mail.sendMail(booking.email, 'Payment rejected: ' + event.title, html);
     try {
-      const orderResponse = await this.sbiepay.createOrder({
-        currencyCode: 'INR', orderAmount: booking.amount,
-        orderRefNumber: merchantOrderNumber,
-        returnUrl: (process.env.BACKEND_URL || 'http://localhost:4000').replace(/\/$/, '') + '/api/bookings/sbiepay/callback',
-      });
-      const order = orderResponse.data?.[0];
-      if (order?.sbiOrderRefNumber) await this.prisma.booking.update({ where: { id: booking.id }, data: { sbiOrderRefNumber: String(order.sbiOrderRefNumber) } });
-      if (!order?.transactionUrl) throw new Error('Missing SBI checkout URL');
-      return { booking, transactionUrl: order.transactionUrl };
-    } catch {
-      this.logger.warn('SBI order creation unresolved for booking ' + booking.id + '; scheduled verification will retry.');
-      return { booking, paymentInitiationPending: true };
-    }
+      const reviewers = await this.prisma.user.findMany({ where: { OR: [{ role: { name: 'SUPER_ADMIN' } }, { id: event.ownerId }] }, select: { email: true } });
+      for (const email of new Set(reviewers.map(user => user.email))) {
+        await this.mail.sendMail(email, 'Payment ' + (status === 'pending' ? 'review required' : status) + ': ' + event.title, html);
+      }
+    } catch { this.logger.error('Unable to notify reviewers for booking ' + booking.id); }
   }
 
   async paymentStatus(bookingId: string, token: string) {
@@ -231,9 +239,12 @@ export class BookingsService {
         paymentStatus: dto.status === 'approved' ? 'paid' : dto.status === 'rejected' ? 'failed' : 'pending',
         ...(dto.status === 'approved' ? { paidAt: new Date() } : {}),
       }, include: { event: true } });
-      return { booking: updated, notify: dto.status === 'approved' };
+      return { booking: updated, notify: booking.registrationStatus !== dto.status || booking.rejectionReason !== updated.rejectionReason };
     }, { isolationLevel: 'Serializable' });
-    if (result.notify) await this.sendTicketEmail(result.booking, result.booking.event);
+    if (result.notify) {
+      if (dto.status === 'approved') await this.sendTicketEmail(result.booking, result.booking.event);
+      await this.notifyPaymentReview(result.booking, result.booking.event, dto.status);
+    }
     return result.booking;
   }
 
