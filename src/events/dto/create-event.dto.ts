@@ -14,7 +14,7 @@ import {
 } from 'class-validator';
 
 export const CATEGORIES = ['Music', 'Conference', 'Workshop', 'Sports', 'Festival', 'Community'];
-export const STATUSES = ['published', 'draft', 'sold-out', 'completed'];
+export const STATUSES = ['published', 'draft', 'testing', 'sold-out', 'completed'];
 
 /**
  * Used both to create a fresh draft (only `title` is required — the wizard

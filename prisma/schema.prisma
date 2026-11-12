@@ -92,13 +92,14 @@ model EventPermission {
 
 /// category is validated at the DTO layer to one of:
 /// Music | Conference | Workshop | Sports | Festival | Community
-/// status is validated at the DTO layer to one of: published | draft | sold-out
+/// status is validated at the DTO layer to one of: published | draft | testing | sold-out | completed
 /// slug is null while the event is still being built in the admin wizard —
 /// it is generated once, on the final "finalize" step, and kept stable
 /// after that even if the title changes later.
 model Event {
   id            String            @id @default(uuid())
   slug          String?           @unique
+  previewToken  String?           @unique
   title         String
   category      String            @default("Community")
   date          String            @default("")
@@ -195,6 +196,7 @@ model Booking {
   orderLastCheckedAt DateTime?
   paymentProof       String?
   paymentAccessToken String    @unique @default(uuid())
+  isTest             Boolean   @default(false)
   rejectionReason    String?
   event              Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   user               User?     @relation(fields: [userId], references: [id])

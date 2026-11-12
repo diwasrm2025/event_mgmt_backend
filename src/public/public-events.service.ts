@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthUser } from '../common/decorators/current-user.decorator';
+import { PERMISSIONS } from '../common/permissions';
 
 function parseDateTime(dateStr?: string, timeStr?: string): number | null {
   if (!dateStr) return null;
@@ -21,9 +23,27 @@ function parseDateTime(dateStr?: string, timeStr?: string): number | null {
 export class PublicEventsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private omitOwner<T extends { ownerId: string }>(event: T) {
-    const { ownerId: _ownerId, ...rest } = event;
+  private omitOwner<T extends { ownerId: string; previewToken?: string | null }>(event: T) {
+    const { ownerId: _ownerId, previewToken: _previewToken, ...rest } = event;
     return rest;
+  }
+
+  async findTestingBySlug(slug: string, token: string, user: AuthUser) {
+    const event = await this.prisma.event.findFirst({
+      where: { slug, status: 'testing', previewToken: token },
+      include: {
+        fields: { orderBy: { order: 'asc' } },
+        permissions: { where: { userId: user.id, status: 'ACTIVE' }, select: { id: true } },
+      },
+    });
+    if (!event) throw new NotFoundException('Testing preview not found.');
+    const isOwner = event.ownerId === user.id;
+    const isSuperAdmin = user.permissions.includes(PERMISSIONS.EVENTS_MANAGE_ALL);
+    if (!isOwner && !isSuperAdmin && !event.permissions.length) {
+      throw new NotFoundException('Testing preview not found.');
+    }
+    const { permissions: _permissions, ...preview } = event;
+    return this.omitOwner(preview);
   }
 
   async findPublished(filters: { search?: string; category?: string }) {

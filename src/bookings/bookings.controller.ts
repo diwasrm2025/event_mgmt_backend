@@ -37,6 +37,24 @@ export class BookingsController {
   }
 
   @UseGuards(EventAccessGuard)
+  @RequireEventAccess(EVENT_PERMISSION.PAYMENT_APPROVE, 'eventId')
+  @Get('event/:eventId/:bookingId/payment-proof')
+  async paymentProof(
+    @Param('eventId') eventId: string,
+    @Param('bookingId') bookingId: string,
+    @Res() res: Response,
+  ) {
+    const proof = await this.bookingsService.getPaymentProof(eventId, bookingId);
+    res.set({
+      'Content-Type': proof.contentType,
+      'Content-Disposition': `inline; filename="${proof.fileName}"`,
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return res.send(proof.data);
+  }
+
+  @UseGuards(EventAccessGuard)
   @RequireEventAccess(EVENT_PERMISSION.VIEW, 'eventId')
   @Get('event/:eventId/export')
   @Header('Content-Type', 'text/csv')

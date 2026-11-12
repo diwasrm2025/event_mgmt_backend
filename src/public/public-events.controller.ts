@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser, AuthUser } from '../common/decorators/current-user.decorator';
 import { PublicEventsService } from './public-events.service';
 import { BookingsService } from '../bookings/bookings.service';
 import { CreateBookingDto } from '../bookings/dto/create-booking.dto';
@@ -21,6 +23,24 @@ export class PublicEventsController {
   @Get('events/:slug')
   findBySlug(@Param('slug') slug: string) {
     return this.publicEventsService.findBySlug(slug);
+  }
+
+  @Get('testing/:slug/:token')
+  @UseGuards(JwtAuthGuard)
+  testingPreview(@Param('slug') slug: string, @Param('token') token: string, @CurrentUser() user: AuthUser) {
+    return this.publicEventsService.findTestingBySlug(slug, token, user);
+  }
+
+  @Post('testing/:slug/:token/bookings')
+  @UseGuards(JwtAuthGuard)
+  async testBooking(
+    @Param('slug') slug: string,
+    @Param('token') token: string,
+    @Body() dto: CreateBookingDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.publicEventsService.findTestingBySlug(slug, token, user);
+    return this.bookingsService.createTestingBooking(slug, token, dto, user);
   }
 
   /** Checkout step 1 — places the order through the event URL. Works for

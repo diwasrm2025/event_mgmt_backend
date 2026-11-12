@@ -7,6 +7,26 @@ import { renderTicketEmail, renderPaymentReviewEmail } from '../mail/templates/e
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
 import { SbiepayService } from '../sbiepay/sbiepay.service';
+import { AuthUser } from '../common/decorators/current-user.decorator';
+import { PERMISSIONS } from '../common/permissions';
+
+type BookingEvent = {
+  id: string;
+  title: string;
+  date: string;
+  time: string;
+  venue: string;
+  slug: string | null;
+  ownerId: string;
+  previewToken?: string | null;
+  status: string;
+  eventType: string;
+  price: number;
+  capacity: number;
+  attendees: number;
+  registrationDeadline: Date | null;
+  fields: { name: string; label: string; type: string; required: boolean; options: string[] }[];
+};
 @Injectable()
 export class BookingsService {
   private readonly logger = new Logger(BookingsService.name);
@@ -86,8 +106,34 @@ export class BookingsService {
 
   /** New paid registrations require QR evidence and administrator review. */
   async createBooking(slug: string, dto: CreateBookingDto, userId?: string | null) {
-    
     const event = await this.findBookableEvent(slug);
+    return this.createBookingRecord(event, dto, userId, false);
+  }
+
+  async createTestingBooking(slug: string, token: string, dto: CreateBookingDto, user: AuthUser) {
+    const event = await this.prisma.event.findFirst({
+      where: { slug, status: 'testing', previewToken: token },
+      include: {
+        fields: { orderBy: { order: 'asc' } },
+        permissions: { where: { userId: user.id, status: 'ACTIVE' }, select: { id: true } },
+      },
+    });
+    if (!event) throw new NotFoundException('Testing preview not found.');
+    const isOwner = event.ownerId === user.id;
+    const isSuperAdmin = user.permissions.includes(PERMISSIONS.EVENTS_MANAGE_ALL);
+    if (!isOwner && !isSuperAdmin && !event.permissions.length) {
+      throw new NotFoundException('Testing preview not found.');
+    }
+    return this.createBookingRecord(event, dto, null, true, token);
+  }
+
+  private async createBookingRecord(
+    event: BookingEvent,
+    dto: CreateBookingDto,
+    userId: string | null | undefined,
+    isTest: boolean,
+    previewToken?: string,
+  ) {
     const isFree = event.eventType === 'free' || (!event.eventType && event.price <= 0);
     if (isFree && dto.paymentMethod) {
       throw new BadRequestException('Free event registrations do not accept payment details.');
@@ -110,12 +156,19 @@ export class BookingsService {
     }
     const booking = await this.prisma.$transaction(async (tx) => {
       const current = await tx.event.findUniqueOrThrow({ where: { id: event.id } });
-      if ((current.status && current.status !== 'published') || (current.registrationDeadline && current.registrationDeadline.getTime() <= Date.now())) throw new BadRequestException('Event registration has been closed.');
-      if (current.capacity > 0 && current.attendees >= current.capacity) throw new BadRequestException('This event is sold out.');
+      const eventIsAvailable = isTest
+        ? current.status === 'testing' && current.previewToken === previewToken
+        : current.status === 'published';
+      if (!eventIsAvailable || (!isTest && current.registrationDeadline && current.registrationDeadline.getTime() <= Date.now())) {
+        throw new BadRequestException('Event registration has been closed.');
+      }
+      if (!isTest && current.capacity > 0 && current.attendees >= current.capacity) {
+        throw new BadRequestException('This event is sold out.');
+      }
       const created = await tx.booking.create({ data: {
-        eventId: event.id, userId: userId ?? null, name: dto.name.trim(), email: dto.email.trim().toLowerCase(),
+        eventId: event.id, userId: isTest ? null : userId ?? null, isTest, name: dto.name.trim(), email: dto.email.trim().toLowerCase(),
         phone: dto.phone?.trim() ?? '', seats: 1, responses: (dto.responses ?? {}) as object,
-        amount: Math.max(0, event.price), 
+        amount: Math.max(0, event.price),
         paymentMethod: isFree ? 'free' : 'qr',
         paymentStatus: isFree ? 'paid' : 'pending',
         status: isFree ? 'confirmed' : 'pending',
@@ -124,11 +177,12 @@ export class BookingsService {
         paymentProof: isFree ? null : dto.paymentProof!,
         paidAt: isFree ? new Date() : null,
       } });
-      if (isFree) await tx.event.update({ where: { id: event.id }, data: {
+      if (isFree && !isTest) await tx.event.update({ where: { id: event.id }, data: {
         attendees: { increment: 1 }, ...(current.capacity > 0 && current.attendees + 1 >= current.capacity ? { status: 'sold-out' } : {}),
       } });
       return created;
     }, { isolationLevel: 'Serializable' });
+    if (isTest) return booking;
     if (isFree) {
       await this.sendTicketEmail(booking, event);
       return booking;
@@ -157,19 +211,49 @@ export class BookingsService {
     if (!token) throw new NotFoundException('Booking not found.');
     const booking = await this.prisma.booking.findFirst({
       where: { id: bookingId, paymentAccessToken: token },
-      select: { paymentStatus: true, registrationStatus: true, paidAt: true, status: true, rejectionReason: true },
+      select: { paymentStatus: true, registrationStatus: true, paidAt: true, status: true, rejectionReason: true, isTest: true },
     });
     if (!booking) throw new NotFoundException('Booking not found.');
     return booking;
   }
 
   async roster(eventId: string, access: { canApprovePayment: boolean; canCheckIn: boolean }) {
-    return this.prisma.booking.findMany({ where: { eventId }, orderBy: { createdAt: 'desc' }, select: {
-      id: true, name: true, email: true, phone: true, seats: true, amount: true, createdAt: true,
-      paymentMethod: true, paymentStatus: true, registrationStatus: true, status: true, responses: true,
-      ...(access.canApprovePayment ? { paymentProof: true, transactionId: true, rejectionReason: true, paidAt: true } : {}),
-      ...(access.canCheckIn ? { checkedIn: true, checkedInAt: true } : {}),
-    } });
+    const [bookings, paymentProofs] = await Promise.all([
+      this.prisma.booking.findMany({ where: { eventId }, orderBy: { createdAt: 'desc' }, select: {
+        id: true, name: true, email: true, phone: true, seats: true, amount: true, createdAt: true,
+        paymentMethod: true, paymentStatus: true, registrationStatus: true, status: true, responses: true,
+        isTest: true,
+        ...(access.canApprovePayment ? { transactionId: true, rejectionReason: true, paidAt: true } : {}),
+        ...(access.canCheckIn ? { checkedIn: true, checkedInAt: true } : {}),
+      } }),
+      access.canApprovePayment
+        ? this.prisma.booking.findMany({ where: { eventId, paymentProof: { not: null } }, select: { id: true } })
+        : Promise.resolve([]),
+    ]);
+    const proofBookingIds = new Set(paymentProofs.map(({ id }) => id));
+    return bookings.map(booking => ({
+      ...booking,
+      ...(access.canApprovePayment ? { hasPaymentProof: proofBookingIds.has(booking.id) } : {}),
+    }));
+  }
+
+  async getPaymentProof(eventId: string, bookingId: string) {
+    const booking = await this.prisma.booking.findFirst({
+      where: { id: bookingId, eventId },
+      select: { paymentProof: true },
+    });
+    if (!booking?.paymentProof) throw new NotFoundException('Payment screenshot not found.');
+    const match = booking.paymentProof.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
+    if (!match) throw new BadRequestException('The stored payment screenshot is invalid.');
+    const data = Buffer.from(match[2], 'base64');
+    if (!data.length || data.length > 5 * 1024 * 1024) {
+      throw new BadRequestException('The stored payment screenshot is invalid.');
+    }
+    return {
+      data,
+      contentType: `image/${match[1]}`,
+      fileName: `payment-proof.${match[1] === 'jpeg' ? 'jpg' : match[1]}`,
+    };
   }
 
   async deleteBooking(eventId: string, bookingId: string) {
@@ -180,7 +264,7 @@ export class BookingsService {
         throw new BadRequestException('Wait until SBI payment verification finishes before deleting this registration.');
       }
       await tx.booking.delete({ where: { id: booking.id } });
-      if (booking.status === 'confirmed' && booking.registrationStatus === 'approved') {
+      if (!booking.isTest && booking.status === 'confirmed' && booking.registrationStatus === 'approved') {
         const attendees = Math.max(0, booking.event.attendees - booking.seats);
         await tx.event.update({ where: { id: eventId }, data: {
           attendees,
@@ -193,7 +277,7 @@ export class BookingsService {
 
   async myBookings(userId: string) {
     return this.prisma.booking.findMany({
-      where: { userId },
+      where: { userId, isTest: false },
       orderBy: { createdAt: 'desc' },
       include: { event: true },
     });
@@ -204,6 +288,7 @@ export class BookingsService {
   async toggleCheckIn(eventId: string, bookingId: string) {
     const booking = await this.prisma.booking.findFirst({ where: { id: bookingId, eventId } });
     if (!booking) throw new NotFoundException('Booking not found.');
+    if (booking.isTest) throw new BadRequestException('Test registrations cannot be checked in.');
     if (booking.paymentStatus !== 'paid' || booking.registrationStatus !== 'approved') throw new BadRequestException('Approve payment before check-in.');
     return this.prisma.booking.update({
       where: { id: bookingId },
@@ -226,11 +311,13 @@ export class BookingsService {
       if (dto.status === 'approved') {
         if (!booking.transactionId || !booking.paymentProof) throw new BadRequestException('Transaction ID and payment proof are required before approval.');
         const event = booking.event;
-        if (event.capacity > 0 && event.attendees + booking.seats > event.capacity) throw new BadRequestException('No seats remain. Resolve the payment with the attendee before approving.');
-        await tx.event.update({ where: { id: eventId }, data: {
-          attendees: { increment: booking.seats },
-          ...(event.capacity > 0 && event.attendees + booking.seats >= event.capacity ? { status: 'sold-out' } : {}),
-        } });
+        if (!booking.isTest) {
+          if (event.capacity > 0 && event.attendees + booking.seats > event.capacity) throw new BadRequestException('No seats remain. Resolve the payment with the attendee before approving.');
+          await tx.event.update({ where: { id: eventId }, data: {
+            attendees: { increment: booking.seats },
+            ...(event.capacity > 0 && event.attendees + booking.seats >= event.capacity ? { status: 'sold-out' } : {}),
+          } });
+        }
       }
       const updated = await tx.booking.update({ where: { id: bookingId }, data: {
         registrationStatus: dto.status,
@@ -241,7 +328,7 @@ export class BookingsService {
       }, include: { event: true } });
       return { booking: updated, notify: booking.registrationStatus !== dto.status || booking.rejectionReason !== updated.rejectionReason };
     }, { isolationLevel: 'Serializable' });
-    if (result.notify) {
+    if (result.notify && !result.booking.isTest) {
       if (dto.status === 'approved') await this.sendTicketEmail(result.booking, result.booking.event);
       await this.notifyPaymentReview(result.booking, result.booking.event, dto.status);
     }

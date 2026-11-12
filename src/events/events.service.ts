@@ -48,7 +48,7 @@ export class EventsService {
       include: {
         owner: { select: { id: true, name: true, email: true } },
         company: { select: { id: true, name: true, slug: true } },
-        _count: { select: { bookings: true } },
+        _count: { select: { bookings: { where: { isTest: false } } } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -126,17 +126,19 @@ export class EventsService {
   async dashboardSummary(id: string) {
     const event = await this.findOne(id);
 
-    const [sharedMembersCount, totalRegistrations, checkedInAttendees, pendingRegistrations] = await Promise.all([
+    const [sharedMembersCount, totalRegistrations, testRegistrations, checkedInAttendees, pendingRegistrations] = await Promise.all([
       this.prisma.eventPermission.count({ where: { eventId: id, status: 'ACTIVE' } }),
-      this.prisma.booking.count({ where: { eventId: id } }),
-      this.prisma.booking.count({ where: { eventId: id, checkedIn: true } }),
-      this.prisma.booking.count({ where: { eventId: id, registrationStatus: 'pending' } }),
+      this.prisma.booking.count({ where: { eventId: id, isTest: false } }),
+      this.prisma.booking.count({ where: { eventId: id, isTest: true } }),
+      this.prisma.booking.count({ where: { eventId: id, isTest: false, checkedIn: true } }),
+      this.prisma.booking.count({ where: { eventId: id, isTest: false, registrationStatus: 'pending' } }),
     ]);
 
     return {
       owner: event.owner,
       sharedMembersCount,
       totalRegistrations,
+      testRegistrations,
       checkedInAttendees,
       pendingRegistrations,
       status: event.status,
@@ -252,12 +254,14 @@ export class EventsService {
     }
 
     const slug = existing.slug ?? (await this.uniqueSlug(existing.title, existing.id));
+    const status = dto.status ?? (existing.status === 'draft' ? 'published' : existing.status);
 
     const event = await this.prisma.event.update({
       where: { id },
       data: {
         slug,
-        status: dto.status ?? (existing.status === 'draft' ? 'published' : existing.status),
+        status,
+        ...(status === 'testing' && !existing.previewToken ? { previewToken: randomUUID() } : {}),
         wizardStep: 5,
       },
       include: { fields: { orderBy: { order: 'asc' } } },

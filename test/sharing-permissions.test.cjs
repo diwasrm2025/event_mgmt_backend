@@ -19,14 +19,33 @@ for (const [permissions, payment, checkin] of [
     const capabilities = rosterCapabilities({ permissions });
     assert.deepEqual(capabilities, { canDelete: false, canApprovePayment: payment, canCheckIn: checkin });
     let selection;
-    const service = new BookingsService({ booking: { findMany: async args => { selection = args.select; return []; } } }, {});
-    await service.roster('event', capabilities);
-    assert.equal(Boolean(selection.paymentProof), payment);
+    const service = new BookingsService({ booking: { findMany: async args => {
+      if (Object.keys(args.select).length === 1) return payment ? [{ id: 'booking' }] : [];
+      selection = args.select;
+      return [{ id: 'booking' }];
+    } } }, {});
+    const rows = await service.roster('event', capabilities);
+    assert.equal(selection.paymentProof, undefined);
     assert.equal(Boolean(selection.transactionId), payment);
     assert.equal(Boolean(selection.checkedIn), checkin);
     assert.equal(selection.paymentAccessToken, undefined);
+    assert.equal(Boolean(rows[0].hasPaymentProof), payment);
+    assert.equal('paymentProof' in rows[0], false);
   });
 }
+test('payment screenshot is returned as validated image bytes', async () => {
+  const image = Buffer.from('image bytes');
+  const service = new BookingsService({ booking: { findFirst: async () => ({
+    paymentProof: `data:image/png;base64,${image.toString('base64')}`,
+  }) } }, {});
+  const proof = await service.getPaymentProof('event', 'booking');
+  assert.equal(proof.contentType, 'image/png');
+  assert.equal(proof.fileName, 'payment-proof.png');
+  assert.deepEqual(proof.data, image);
+
+  const invalid = new BookingsService({ booking: { findFirst: async () => ({ paymentProof: 'not-an-image' }) } }, {});
+  await assert.rejects(invalid.getPaymentProof('event', 'booking'), /invalid/);
+});
 test('payment approval is a valid sharing permission; unknown permissions are rejected', async () => {
   const dto = Object.assign(new GrantPermissionDto(), { email: 'member@example.com', permissions: [EVENT_PERMISSION.PAYMENT_APPROVE] });
   assert.equal((await validate(dto)).length, 0);
@@ -43,7 +62,8 @@ test('HTTP routes enforce independent view, payment approval, and check-in acces
   };
   const service = {
     deleteBooking: async () => ({ id: 'booking' }),
-    roster: async (id, access) => [{ id: 'booking', name: 'Member', ...(access.canApprovePayment ? { paymentProof: 'private-proof' } : {}), ...(access.canCheckIn ? { checkedIn: false } : {}) }],
+    roster: async (id, access) => [{ id: 'booking', name: 'Member', ...(access.canApprovePayment ? { hasPaymentProof: true } : {}), ...(access.canCheckIn ? { checkedIn: false } : {}) }],
+    getPaymentProof: async () => ({ data: Buffer.from('proof'), contentType: 'image/png', fileName: 'payment-proof.png' }),
     toggleCheckIn: async () => ({ id: 'booking', checkedIn: true }),
     updateRegistrationStatus: async () => ({ id: 'booking', paymentStatus: 'paid', status: 'confirmed', registrationStatus: 'approved', event: { private: true }, paymentAccessToken: 'secret' }),
   };
@@ -58,8 +78,15 @@ test('HTTP routes enforce independent view, payment approval, and check-in acces
       const roster = await fetch(`${base}/bookings/event/event`, { headers });
       assert.equal(roster.status, 200, `${role} can view roster`);
       const payload = await roster.json();
-      assert.equal(Boolean(payload.items[0].paymentProof), payment);
+      assert.equal(Boolean(payload.items[0].hasPaymentProof), payment);
+      assert.equal('paymentProof' in payload.items[0], false);
       assert.equal('checkedIn' in payload.items[0], checkin);
+      const proof = await fetch(`${base}/bookings/event/event/booking/payment-proof`, { headers });
+      assert.equal(proof.status, payment ? 200 : 403, `${role} screenshot access`);
+      if (payment) {
+        assert.match(proof.headers.get('content-type'), /^image\/png(?:;|$)/);
+        assert.equal(await proof.text(), 'proof');
+      }
       const approval = await fetch(`${base}/bookings/event/event/booking/registration-status`, { method: 'PATCH', headers, body: JSON.stringify({ status: 'approved' }) });
       assert.equal(approval.status, payment ? 200 : 403, `${role} approval`);
       if (payment) { const result = await approval.json(); assert.equal(result.paymentAccessToken, undefined); assert.equal(result.event, undefined); }
