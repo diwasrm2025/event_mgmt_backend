@@ -195,6 +195,8 @@ model Booking {
   orderStatus        String?
   orderLastCheckedAt DateTime?
   paymentProof       String?
+  paymentProofPublicId String?
+  paymentProofFormat String?
   paymentAccessToken String    @unique @default(uuid())
   isTest             Boolean   @default(false)
   rejectionReason    String?

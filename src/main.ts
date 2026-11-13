@@ -11,9 +11,7 @@ async function bootstrap() {
   app.useBodyParser('urlencoded', { extended: true });
   const config = app.get(ConfigService);
 
-  // Banner images uploaded through the events wizard are written to
-  // <backend>/uploads and served back out from here at /uploads/... —
-  // this path is intentionally OUTSIDE the /api prefix set below.
+  // Keep serving older local media URLs; all new uploads use Cloudinary.
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
 
   app.setGlobalPrefix('api');

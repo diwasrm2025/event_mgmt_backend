@@ -1,12 +1,12 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import * as path from 'path';
-import * as fs from 'fs';
 import { PrismaService } from '../prisma/prisma.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { SYSTEM_ROLES } from '../common/permissions';
+import { CloudinaryService } from '../common/cloudinary/cloudinary.service';
+const sharp: typeof import('sharp').default = require('sharp');
 
 type UserWithRole = {
   id: string;
@@ -18,9 +18,12 @@ type UserWithRole = {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   private sign(user: { id: string }) {
@@ -101,14 +104,40 @@ export class AuthService {
     return this.toPublicUser(user);
   }
 
-  async uploadAvatar(userId: string, file: Express.Multer.File) {
+  async uploadAvatar(userId: string, file?: Express.Multer.File) {
     if (!file) throw new BadRequestException('No file provided.');
-    const avatarUrl = `/uploads/${file.filename}`;
-    const user = await this.prisma.user.update({
-      where: { id: userId },
-      data: { avatarUrl },
-      include: { role: true },
-    });
+    let format: string | undefined;
+    try {
+      format = (await sharp(file.buffer).metadata()).format;
+    } catch {
+      throw new BadRequestException('The uploaded file is not a supported image.');
+    }
+    if (!['png', 'jpeg', 'webp'].includes(format ?? '')) {
+      throw new BadRequestException('Only PNG, JPEG, or WebP images are allowed.');
+    }
+    const existing = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
+    const asset = await this.cloudinary.uploadBuffer(file.buffer, { folder: 'event-mgmt/avatars', resourceType: 'image' });
+    let user: UserWithRole;
+    try {
+      user = await this.prisma.user.update({
+        where: { id: userId },
+        data: { avatarUrl: asset.secureUrl },
+        include: { role: true },
+      });
+    } catch (error) {
+      await this.cloudinary.deleteByPublicId(asset.publicId, 'image', asset.deliveryType);
+      throw error;
+    }
+    if (existing?.avatarUrl && existing.avatarUrl !== asset.secureUrl) {
+      try {
+        await this.cloudinary.deleteImageByUrl(existing.avatarUrl);
+      } catch (error) {
+        this.logger.error(
+          `Unable to remove previous avatar for user ${userId}.`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+    }
     return this.toPublicUser(user);
   }
 }

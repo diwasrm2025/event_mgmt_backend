@@ -25,7 +25,7 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { QueryEventsDto } from './dto/query-events.dto';
 import { FinalizeEventDto } from './dto/finalize-event.dto';
-import { BANNER_UPLOAD_LIMITS, bannerFileFilter, bannerStorage } from './banner-storage';
+import { BANNER_UPLOAD_LIMITS, bannerFileFilter } from './banner-storage';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('events')
@@ -93,7 +93,6 @@ export class EventsController {
   @Post(':id/banners')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: bannerStorage,
       fileFilter: bannerFileFilter,
       limits: BANNER_UPLOAD_LIMITS,
     }),

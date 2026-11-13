@@ -3,8 +3,10 @@ Replace that file to change the receiving QR, then rebuild the frontend.
 `NEXT_PUBLIC_PAYMENT_QR_URL` can optionally override it with an image URL.
 
 Attendees complete their details, pay, and submit a transaction ID and a PNG,
-JPEG or WebP screenshot (up to 5 MB). The evidence is stored in the database
-and appears in the event's full attendee roster. Payment remains pending.
+JPEG or WebP screenshot (up to 5 MB). The screenshot is validated by the API
+and stored as an authenticated Cloudinary asset; the database stores its
+Cloudinary reference. It appears in the event's full attendee roster through
+the authorized payment-proof endpoint. Payment remains pending.
 
 The event owner or super admin reviews the screenshot and selects Approved
 or Rejected in the registration status column. Approval marks payment paid
@@ -23,6 +25,11 @@ engine DLL during generation, stop the backend before regenerating it.
 Configure the existing SMTP or Brevo mail transport for email delivery.
 MailService logs delivery failures; it does not automatically retry them.
 New SBI ePay checkout is paused. Existing SBI orders continue reconciliation.
+
+Configure `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and
+`CLOUDINARY_API_SECRET` in the backend `.env` for local development and in the
+backend environment settings for production. Do not put these credentials in
+source code. The backend migration adds the Cloudinary asset reference fields.
 
 Verification: `node --test test/manual-payments.test.cjs` from `backend`.
 

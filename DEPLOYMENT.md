@@ -33,6 +33,23 @@ the Render service. Missing credentials no longer stop the API from starting;
 free registrations remain available, and paid registrations return an error
 before creating an order.
 
+Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and
+`CLOUDINARY_API_SECRET` in the backend environment for both development and
+production. Use the same Cloudinary product environment in both deployments.
+The local `.env.example` lists these keys; do not commit `.env` or put Cloudinary
+credentials in source code. New avatars, event banners, and payment screenshots
+are stored in Cloudinary. Payment screenshots use authenticated delivery and
+remain available only through the authorized backend proof route. Existing
+`/uploads/...` URLs continue to be served for previously uploaded local media.
+Apply the committed Cloudinary payment-proof migration with `npm run prisma:deploy`
+before running the updated API.
+
+Event testing previews are independent of `NODE_ENV`: an event must have status
+`testing`, and its preview token remains restricted to the owner, super admin,
+or an active event collaborator. Test bookings are marked `isTest`, do not
+reserve live capacity, and do not send attendee or payment-review emails in
+development or production.
+
 The SBI SDK throws a plain object when required credentials are absent. With
 eager initialization this can appear as `ERROR [ExceptionHandler] undefined`
 during startup. The payment client now initializes only when needed.
@@ -50,6 +67,17 @@ during startup. The payment client now initializes only when needed.
 The migration classifies existing events with a positive price as paid and
 events with a zero price as free. Do not disable request validation to bypass
 an outdated API deployment.
+
+## Event testing status rejected in production
+
+The current backend accepts `testing` for event create, update, finalize, and
+status-filter requests. If a response lists only `published`, `draft`,
+`sold-out`, and `completed`, the production API is running an older build.
+For the Render service, set **Root Directory** to `backend`, use build command
+`npm ci && npm run build`, and start command `npm run start:prod`. Deploy the
+latest backend source (use **Clear build cache & deploy** if the old response
+continues), then retry the action. Rebuilding or changing only the frontend
+cannot update the backend validator.
 
 ## Checkbox choices rejected in production
 

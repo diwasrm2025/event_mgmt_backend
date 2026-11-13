@@ -1,4 +1,5 @@
 import { IsIn, IsOptional, IsString } from 'class-validator';
+import { EventStatus, STATUSES } from './create-event.dto';
 
 export class QueryEventsDto {
   @IsOptional()
@@ -10,6 +11,6 @@ export class QueryEventsDto {
   category?: string;
 
   @IsOptional()
-  @IsIn(['published', 'draft', 'sold-out'])
-  status?: string;
+  @IsIn(STATUSES, { message: `Status must be one of: ${STATUSES.join(', ')}` })
+  status?: EventStatus;
 }

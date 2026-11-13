@@ -5,7 +5,7 @@ const { BookingsService } = require('../src/bookings/bookings.service');
 const { SbiepayVerificationJob } = require('../src/bookings/sbiepay-verification.job');
 
 function setup(price = 100) {
-  const event = { id: 'event', title: 'Test event', eventType: price > 0 ? 'paid' : 'free', price, attendees: 0, capacity: 2, fields: [] };
+  const event = { id: 'event', title: 'Test event', status: 'published', eventType: price > 0 ? 'paid' : 'free', price, attendees: 0, capacity: 2, fields: [] };
   const state = { booking: null, emails: [], orders: [], searches: [], searchStatus: 'CREATED' };
   const db = {
     event: {

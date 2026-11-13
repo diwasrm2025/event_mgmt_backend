@@ -11,7 +11,7 @@ test('missing SBI credentials allow free bookings and reject paid bookings befor
     keys.forEach((key) => delete process.env[key]);
     const gateway = new SbiepayService();
     assert.throws(() => gateway.assertConfigured(), /SBIEPAY_API_KEY/);
-    const event = { id: 'event', title: 'Test event', eventType: 'free', price: 0, capacity: 10, attendees: 0, fields: [] };
+    const event = { id: 'event', title: 'Test event', status: 'published', eventType: 'free', price: 0, capacity: 10, attendees: 0, fields: [] };
     let transactions = 0;
     const prisma = {
       event: { findFirst: async () => event },
@@ -31,7 +31,7 @@ test('missing SBI credentials allow free bookings and reject paid bookings befor
     assert.equal(transactions, 1);
     event.eventType = 'paid';
     event.price = 100;
-    await assert.rejects(() => bookings.createBooking('test', attendee), /Paid registration is unavailable/);
+    await assert.rejects(() => bookings.createBooking('test', attendee), /SBI ePay is paused/);
     assert.equal(transactions, 1);
   } finally {
     keys.forEach((key, index) => {

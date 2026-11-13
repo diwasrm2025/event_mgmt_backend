@@ -1,10 +1,8 @@
 import {
-  Body, Controller, Get, HttpCode, HttpStatus, Patch, Post,
+  BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Patch, Post,
   UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
@@ -51,17 +49,17 @@ export class AuthController {
   @Post('avatar')
   @UseInterceptors(
     FileInterceptor('avatar', {
-      storage: diskStorage({
-        destination: './uploads',
-        filename: (_req, file, cb) => {
-          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-          cb(null, `avatar-${uniqueSuffix}${extname(file.originalname)}`);
-        },
-      }),
       limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, callback) => {
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.mimetype)) {
+          callback(new BadRequestException('Only PNG, JPEG, or WebP images are allowed.'), false);
+          return;
+        }
+        callback(null, true);
+      },
     }),
   )
-  uploadAvatar(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: AuthUser) {
+  uploadAvatar(@UploadedFile() file: Express.Multer.File | undefined, @CurrentUser() user: AuthUser) {
     return this.authService.uploadAvatar(user.id, file);
   }
 }

@@ -14,7 +14,8 @@ import {
 } from 'class-validator';
 
 export const CATEGORIES = ['Music', 'Conference', 'Workshop', 'Sports', 'Festival', 'Community'];
-export const STATUSES = ['published', 'draft', 'testing', 'sold-out', 'completed'];
+export const STATUSES = ['published', 'draft', 'testing', 'sold-out', 'completed'] as const;
+export type EventStatus = (typeof STATUSES)[number];
 
 /**
  * Used both to create a fresh draft (only `title` is required — the wizard
@@ -80,7 +81,7 @@ export class CreateEventDto {
 
   @IsOptional()
   @IsIn(STATUSES, { message: `Status must be one of: ${STATUSES.join(', ')}` })
-  status?: string;
+  status?: EventStatus;
 
   @IsOptional()
   @IsString()

@@ -16,6 +16,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { MailModule } from './mail/mail.module';
 import { SbiepayModule } from './sbiepay/sbiepay.module';
 import { CompaniesModule } from './companies/companies.module';
+import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { CompaniesModule } from './companies/companies.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    CloudinaryModule,
     ThrottlerModule.forRoot([
       {
         ttl: 60000,

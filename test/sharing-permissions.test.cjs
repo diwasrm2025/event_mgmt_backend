@@ -37,14 +37,34 @@ test('payment screenshot is returned as validated image bytes', async () => {
   const image = Buffer.from('image bytes');
   const service = new BookingsService({ booking: { findFirst: async () => ({
     paymentProof: `data:image/png;base64,${image.toString('base64')}`,
-  }) } }, {});
+  }) } }, {}, {}, {});
   const proof = await service.getPaymentProof('event', 'booking');
   assert.equal(proof.contentType, 'image/png');
   assert.equal(proof.fileName, 'payment-proof.png');
   assert.deepEqual(proof.data, image);
 
-  const invalid = new BookingsService({ booking: { findFirst: async () => ({ paymentProof: 'not-an-image' }) } }, {});
+  const invalid = new BookingsService({ booking: { findFirst: async () => ({ paymentProof: 'not-an-image' }) } }, {}, {}, {});
   await assert.rejects(invalid.getPaymentProof('event', 'booking'), /invalid/);
+});
+test('authenticated Cloudinary payment proof is retrieved through the backend proxy', async () => {
+  const image = Buffer.from('private image');
+  let download;
+  const service = new BookingsService({
+    booking: { findFirst: async () => ({
+      paymentProof: 'https://res.cloudinary.com/test/image/authenticated/upload/v1/proof.png',
+      paymentProofPublicId: 'event-mgmt/payment-proofs/proof',
+      paymentProofFormat: 'png',
+    }) },
+  }, {}, {}, {
+    downloadPrivateImage: async (publicId, format) => {
+      download = { publicId, format };
+      return { data: image, format };
+    },
+  });
+  const proof = await service.getPaymentProof('event', 'booking');
+  assert.deepEqual(download, { publicId: 'event-mgmt/payment-proofs/proof', format: 'png' });
+  assert.equal(proof.contentType, 'image/png');
+  assert.deepEqual(proof.data, image);
 });
 test('payment approval is a valid sharing permission; unknown permissions are rejected', async () => {
   const dto = Object.assign(new GrantPermissionDto(), { email: 'member@example.com', permissions: [EVENT_PERMISSION.PAYMENT_APPROVE] });

@@ -12,15 +12,29 @@ async function setup() {
     booking: { create: async ({data}) => state.booking = { id: 'b', ...data }, findFirst: async () => ({ ...state.booking, event }), update: async ({data}) => state.booking = { ...state.booking, ...data, event } },
     $transaction: async fn => fn(db),
   };
-  const service = new BookingsService(db, { sendMail: async (...args) => state.emails.push(args) }, { assertConfigured: () => assert.fail('SBI must not be used') });
+  const cloudinary = {
+    uploadBuffer: async () => ({
+      publicId: 'event-mgmt/payment-proofs/proof',
+      secureUrl: 'https://res.cloudinary.com/test/image/authenticated/upload/v1/event-mgmt/payment-proofs/proof.png',
+      format: 'png',
+      version: 1,
+      resourceType: 'image',
+      deliveryType: 'authenticated',
+    }),
+    deleteByPublicId: async () => {},
+  };
+  const service = new BookingsService(db, { sendMail: async (...args) => state.emails.push(args) }, { assertConfigured: () => assert.fail('SBI must not be used') }, cloudinary);
   const image = await sharp({create: {width: 2, height: 2, channels: 3, background: 'white'}}).png().toBuffer();
   const dto = { name: 'Attendee', email: 'user@example.com', paymentMethod: 'qr', transactionId: 'UTR123456', paymentProof: 'data:image/png;base64,' + image.toString('base64') };
   return { service, state, event, dto };
 }
 test('QR submission stays pending, notifies reviewers, and approval sends one ticket', async () => {
   const {service, state, event, dto} = await setup();
-  await service.createBooking('event', dto);
-  assert.equal(state.booking.paymentMethod, 'qr'); assert.equal(state.booking.paymentProof, dto.paymentProof);
+  const response = await service.createBooking('event', dto);
+  assert.equal(state.booking.paymentMethod, 'qr'); assert.match(state.booking.paymentProof, /^https:\/\/res\.cloudinary\.com\//);
+  assert.equal(state.booking.paymentProofPublicId, 'event-mgmt/payment-proofs/proof');
+  assert.equal(response.paymentProof, null);
+  assert.equal(response.paymentProofPublicId, undefined);
   assert.equal(state.booking.paymentStatus, 'pending'); assert.equal(event.attendees, 0);
   assert.deepEqual(state.emails.map(e => e[0]), ['admin@example.com', 'owner@example.com']);
   await assert.rejects(service.toggleCheckIn('e', 'b'), /Approve payment/);

@@ -9,6 +9,7 @@ import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dt
 import { SbiepayService } from '../sbiepay/sbiepay.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PERMISSIONS } from '../common/permissions';
+import { CloudinaryService } from '../common/cloudinary/cloudinary.service';
 
 type BookingEvent = {
   id: string;
@@ -34,6 +35,7 @@ export class BookingsService {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly sbiepay: SbiepayService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   private async sendTicketEmail(
@@ -135,6 +137,8 @@ export class BookingsService {
     previewToken?: string,
   ) {
     const isFree = event.eventType === 'free' || (!event.eventType && event.price <= 0);
+    let proofBytes: Buffer | undefined;
+    let paymentAsset: Awaited<ReturnType<CloudinaryService['uploadBuffer']>> | undefined;
     if (isFree && dto.paymentMethod) {
       throw new BadRequestException('Free event registrations do not accept payment details.');
     }
@@ -147,49 +151,73 @@ export class BookingsService {
       if (!/^[A-Za-z0-9-]{6,100}$/.test(dto.transactionId?.trim() || '')) throw new BadRequestException('Enter a valid transaction ID / UTR (6 to 100 characters).');
       const match = dto.paymentProof?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
       if (!match) throw new BadRequestException('Attach a PNG, JPEG or WebP screenshot.');
-      const bytes = Buffer.from(match[2], 'base64');
-      if (!bytes.length || bytes.length > 5 * 1024 * 1024) throw new BadRequestException('Screenshot must be no larger than 5 MB.');
+      proofBytes = Buffer.from(match[2], 'base64');
+      if (!proofBytes.length || proofBytes.length > 5 * 1024 * 1024) throw new BadRequestException('Screenshot must be no larger than 5 MB.');
       try {
-        const metadata = await sharp(bytes).metadata();
+        const metadata = await sharp(proofBytes).metadata();
         if (!['png', 'jpeg', 'webp'].includes(metadata.format || '')) throw new Error('Invalid image');
       } catch { throw new BadRequestException('The screenshot is not a valid image.'); }
+      paymentAsset = await this.cloudinary.uploadBuffer(proofBytes, {
+        folder: 'event-mgmt/payment-proofs',
+        resourceType: 'image',
+        deliveryType: 'authenticated',
+      });
     }
-    const booking = await this.prisma.$transaction(async (tx) => {
-      const current = await tx.event.findUniqueOrThrow({ where: { id: event.id } });
-      const eventIsAvailable = isTest
-        ? current.status === 'testing' && current.previewToken === previewToken
-        : current.status === 'published';
-      if (!eventIsAvailable || (!isTest && current.registrationDeadline && current.registrationDeadline.getTime() <= Date.now())) {
-        throw new BadRequestException('Event registration has been closed.');
+    let booking;
+    try {
+      booking = await this.prisma.$transaction(async (tx) => {
+        const current = await tx.event.findUniqueOrThrow({ where: { id: event.id } });
+        const eventIsAvailable = isTest
+          ? current.status === 'testing' && current.previewToken === previewToken
+          : current.status === 'published';
+        if (!eventIsAvailable || (!isTest && current.registrationDeadline && current.registrationDeadline.getTime() <= Date.now())) {
+          throw new BadRequestException('Event registration has been closed.');
+        }
+        if (!isTest && current.capacity > 0 && current.attendees >= current.capacity) {
+          throw new BadRequestException('This event is sold out.');
+        }
+        const created = await tx.booking.create({ data: {
+          eventId: event.id, userId: isTest ? null : userId ?? null, isTest, name: dto.name.trim(), email: dto.email.trim().toLowerCase(),
+          phone: dto.phone?.trim() ?? '', seats: 1, responses: (dto.responses ?? {}) as object,
+          amount: Math.max(0, event.price),
+          paymentMethod: isFree ? 'free' : 'qr',
+          paymentStatus: isFree ? 'paid' : 'pending',
+          status: isFree ? 'confirmed' : 'pending',
+          registrationStatus: isFree ? 'approved' : 'pending',
+          transactionId: isFree ? null : dto.transactionId!.trim(),
+          paymentProof: paymentAsset?.secureUrl ?? null,
+          paymentProofPublicId: paymentAsset?.publicId ?? null,
+          paymentProofFormat: paymentAsset?.format ?? null,
+          paidAt: isFree ? new Date() : null,
+        } });
+        if (isFree && !isTest) await tx.event.update({ where: { id: event.id }, data: {
+          attendees: { increment: 1 }, ...(current.capacity > 0 && current.attendees + 1 >= current.capacity ? { status: 'sold-out' } : {}),
+        } });
+        return created;
+      }, { isolationLevel: 'Serializable' });
+    } catch (error) {
+      if (paymentAsset) {
+        try {
+          await this.cloudinary.deleteByPublicId(paymentAsset.publicId, 'image', paymentAsset.deliveryType);
+        } catch (cleanupError) {
+          this.logger.error(
+            `Unable to remove orphaned payment screenshot ${paymentAsset.publicId}.`,
+            cleanupError instanceof Error ? cleanupError.stack : String(cleanupError),
+          );
+        }
       }
-      if (!isTest && current.capacity > 0 && current.attendees >= current.capacity) {
-        throw new BadRequestException('This event is sold out.');
-      }
-      const created = await tx.booking.create({ data: {
-        eventId: event.id, userId: isTest ? null : userId ?? null, isTest, name: dto.name.trim(), email: dto.email.trim().toLowerCase(),
-        phone: dto.phone?.trim() ?? '', seats: 1, responses: (dto.responses ?? {}) as object,
-        amount: Math.max(0, event.price),
-        paymentMethod: isFree ? 'free' : 'qr',
-        paymentStatus: isFree ? 'paid' : 'pending',
-        status: isFree ? 'confirmed' : 'pending',
-        registrationStatus: isFree ? 'approved' : 'pending',
-        transactionId: isFree ? null : dto.transactionId!.trim(),
-        paymentProof: isFree ? null : dto.paymentProof!,
-        paidAt: isFree ? new Date() : null,
-      } });
-      if (isFree && !isTest) await tx.event.update({ where: { id: event.id }, data: {
-        attendees: { increment: 1 }, ...(current.capacity > 0 && current.attendees + 1 >= current.capacity ? { status: 'sold-out' } : {}),
-      } });
-      return created;
-    }, { isolationLevel: 'Serializable' });
-    if (isTest) return booking;
+      throw error;
+    }
+    const { paymentProof: _paymentProof, paymentProofPublicId: _proofPublicId, paymentProofFormat: _proofFormat, ...publicBooking } = booking;
+    const responseBooking = { ...publicBooking, paymentProof: null };
+    if (isTest) return responseBooking;
     if (isFree) {
       await this.sendTicketEmail(booking, event);
-      return booking;
+      return responseBooking;
     }
 
     await this.notifyPaymentReview(booking, event, 'pending');
-    return booking;
+    return responseBooking;
   }
 
   private async notifyPaymentReview(
@@ -240,9 +268,18 @@ export class BookingsService {
   async getPaymentProof(eventId: string, bookingId: string) {
     const booking = await this.prisma.booking.findFirst({
       where: { id: bookingId, eventId },
-      select: { paymentProof: true },
+      select: { paymentProof: true, paymentProofPublicId: true, paymentProofFormat: true },
     });
     if (!booking?.paymentProof) throw new NotFoundException('Payment screenshot not found.');
+    if (booking.paymentProofPublicId && booking.paymentProofFormat) {
+      const proof = await this.cloudinary.downloadPrivateImage(booking.paymentProofPublicId, booking.paymentProofFormat);
+      const format = proof.format === 'jpg' ? 'jpeg' : proof.format;
+      return {
+        data: proof.data,
+        contentType: `image/${format}`,
+        fileName: `payment-proof.${format === 'jpeg' ? 'jpg' : format}`,
+      };
+    }
     const match = booking.paymentProof.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
     if (!match) throw new BadRequestException('The stored payment screenshot is invalid.');
     const data = Buffer.from(match[2], 'base64');
@@ -257,7 +294,7 @@ export class BookingsService {
   }
 
   async deleteBooking(eventId: string, bookingId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const booking = await tx.booking.findFirst({ where: { id: bookingId, eventId }, include: { event: true } });
       if (!booking) throw new NotFoundException('Booking not found.');
       if (booking.paymentMethod === 'sbiepay' && booking.paymentStatus === 'pending') {
@@ -271,8 +308,12 @@ export class BookingsService {
           ...(booking.event.status === 'sold-out' && (booking.event.capacity <= 0 || attendees < booking.event.capacity) ? { status: 'published' } : {}),
         } });
       }
-      return { id: booking.id };
+      return { id: booking.id, paymentProofPublicId: booking.paymentProofPublicId };
     }, { isolationLevel: 'Serializable' });
+    if (result.paymentProofPublicId) {
+      await this.cloudinary.deleteByPublicId(result.paymentProofPublicId, 'image', 'authenticated');
+    }
+    return { id: result.id };
   }
 
   async myBookings(userId: string) {

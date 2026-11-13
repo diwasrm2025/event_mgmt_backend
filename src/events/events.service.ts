@@ -7,9 +7,10 @@ import { FinalizeEventDto } from './dto/finalize-event.dto';
 import { BANNERS_DIR, BANNERS_URL_PREFIX } from './banner-storage';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { PERMISSIONS } from '../common/permissions';
-import { unlink, copyFile, readFile } from 'fs/promises';
+import { unlink, copyFile } from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { basename, extname, join } from 'path';
+import { CloudinaryService } from '../common/cloudinary/cloudinary.service';
 const sharp: typeof import('sharp').default = require('sharp');
 
 function slugify(value: string) {
@@ -31,7 +32,10 @@ function randomSuffix() {
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cloudinary: CloudinaryService,
+  ) {}
 
   private async uniqueSlug(title: string, ignoreId?: string) {
     let slug = slugify(title);
@@ -217,6 +221,8 @@ export class EventsService {
     if (typeof dto.onlineUrl === 'string') data.onlineUrl = dto.onlineUrl.trim();
     if (typeof dto.host === 'string') data.host = dto.host.trim();
     if (typeof dto.description === 'string') data.description = dto.description.trim();
+    if (dto.status === 'testing' && (existing.status !== 'testing' || !existing.previewToken)) data.previewToken = randomUUID();
+    if (dto.status && dto.status !== 'testing' && existing.status === 'testing') data.previewToken = null;
 
     const event = await this.prisma.event.update({
       where: { id },
@@ -261,7 +267,9 @@ export class EventsService {
       data: {
         slug,
         status,
-        ...(status === 'testing' && !existing.previewToken ? { previewToken: randomUUID() } : {}),
+        ...(status === 'testing'
+          ? { previewToken: existing.status === 'testing' ? existing.previewToken ?? randomUUID() : randomUUID() }
+          : existing.status === 'testing' ? { previewToken: null } : {}),
         wizardStep: 5,
       },
       include: { fields: { orderBy: { order: 'asc' } } },
@@ -294,6 +302,11 @@ export class EventsService {
     const banners: string[] = [];
     try {
       for (const url of source.banners) {
+        if (url.startsWith('https://res.cloudinary.com/')) {
+          const asset = await this.cloudinary.copyImageFromUrl(url, 'event-mgmt/banners');
+          banners.push(asset.secureUrl);
+          continue;
+        }
         if (!url.startsWith(BANNERS_URL_PREFIX + '/')) { banners.push(url); continue; }
         const filename = randomUUID() + extname(url);
         await copyFile(join(process.cwd(), 'uploads', 'banners', url.slice(BANNERS_URL_PREFIX.length + 1)), join(process.cwd(), 'uploads', 'banners', filename));
@@ -318,31 +331,30 @@ export class EventsService {
   async addBanner(id: string, file: Express.Multer.File) {
     const existing = await this.findOne(id);
     if (existing.banners.length >= 8) {
-      await unlink(file.path).catch(() => undefined);
       throw new BadRequestException('You can add up to 8 banner images.');
     }
-    const filename = `${randomUUID()}.webp`;
-    const outputPath = join(BANNERS_DIR, filename);
+    let image: Buffer;
     try {
-      const image = await readFile(file.path);
-      await sharp(image).rotate().webp({ quality: 85 }).toFile(outputPath);
-      await unlink(file.path).catch(() => undefined);
+      image = await sharp(file.buffer).rotate().webp({ quality: 85 }).toBuffer();
     } catch (error) {
-      await unlink(file.path).catch(() => undefined);
       this.logger.error(
         'Failed to convert uploaded event banner image.',
         error instanceof Error ? error.stack : String(error),
       );
       throw new BadRequestException('The uploaded file is not a supported image.');
     }
-    const url = `${BANNERS_URL_PREFIX}/${filename}`;
+    const asset = await this.cloudinary.uploadBuffer(image, {
+      folder: 'event-mgmt/banners',
+      resourceType: 'image',
+      format: 'webp',
+    });
     try {
       return await this.prisma.event.update({
         where: { id },
-        data: { banners: { push: url } },
+        data: { banners: { push: asset.secureUrl } },
       });
     } catch (error) {
-      await unlink(outputPath).catch(() => undefined);
+      await this.cloudinary.deleteByPublicId(asset.publicId, 'image', asset.deliveryType);
       throw error;
     }
   }
@@ -361,6 +373,7 @@ export class EventsService {
   }
 
   private async deleteBannerFile(url: string) {
+    if (await this.cloudinary.deleteImageByUrl(url)) return;
     if (!url.startsWith(`${BANNERS_URL_PREFIX}/`)) return;
     const filePath = join(BANNERS_DIR, basename(url));
     try {
@@ -372,7 +385,7 @@ export class EventsService {
 
   /** Runs periodically (see EventsLifecycleService). Any 'published' event
    * whose date + time has passed is moved to 'completed' and has its
-   * banner images deleted from disk — the storage is reclaimed, but the
+   * banner images deleted — the storage is reclaimed, but the
    * event row itself (and its bookings/attendee history) is kept forever
    * so it still shows up, correctly labeled, in every list and report. */
   async autoCompletePastEvents() {
