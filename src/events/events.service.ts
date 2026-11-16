@@ -174,6 +174,7 @@ export class EventsService {
         eventMode: dto.eventMode ?? 'offline',
         onlineUrl: dto.onlineUrl?.trim() ?? '',
         venue: dto.venue?.trim() ?? '',
+        googleMapsUrl: dto.googleMapsUrl?.trim() ?? '',
         capacity: dto.capacity ?? 0,
         attendees: dto.attendees ?? 0,
         eventType,
@@ -218,6 +219,7 @@ export class EventsService {
     delete (data as { ownerId?: unknown }).ownerId;
     if (typeof dto.title === 'string') data.title = dto.title.trim();
     if (typeof dto.venue === 'string') data.venue = dto.venue.trim();
+    if (typeof dto.googleMapsUrl === 'string') data.googleMapsUrl = dto.googleMapsUrl.trim();
     if (typeof dto.onlineUrl === 'string') data.onlineUrl = dto.onlineUrl.trim();
     if (typeof dto.host === 'string') data.host = dto.host.trim();
     if (typeof dto.description === 'string') data.description = dto.description.trim();
@@ -314,6 +316,7 @@ export class EventsService {
       }
       const result = await this.prisma.event.create({ data: {
         title: source.title + ' copy', category: source.category, date: source.date, time: source.time,
+        googleMapsUrl: source.googleMapsUrl,
         venue: source.venue, capacity: source.capacity, eventType: source.eventType, price: source.price,
         description: source.description, agenda: [...source.agenda], host: source.host, featured: source.featured,
         eventMode: source.eventMode, onlineUrl: source.onlineUrl, registrationDeadline: source.registrationDeadline,

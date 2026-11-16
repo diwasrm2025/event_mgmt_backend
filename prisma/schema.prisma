@@ -105,6 +105,7 @@ model Event {
   date          String            @default("")
   time          String            @default("")
   venue         String            @default("")
+  googleMapsUrl String            @default("")
   capacity      Int               @default(0)
   attendees     Int               @default(0)
   eventType     String            @default("free")

@@ -9,6 +9,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUrl,
+  ValidateIf,
   Min,
   MinLength,
 } from 'class-validator';
@@ -56,6 +58,12 @@ export class CreateEventDto {
   @IsOptional()
   @IsString()
   venue?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @ValidateIf((_object, value) => value !== '')
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  googleMapsUrl?: string;
 
   @IsOptional()
   @Type(() => Number)
