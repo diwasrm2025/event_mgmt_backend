@@ -1,3 +1,4 @@
+import { eventHasEnded, isCompletedEvent } from './event-lifecycle';
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -82,6 +83,7 @@ export class EventsService {
     });
 
     return (events ?? [])
+      .map((event) => isCompletedEvent(event) ? { ...event, status: 'completed' } : event)
       .filter((event) => {
         if (!query.search) return true;
         const haystack = `${event.title} ${event.venue} ${event.host}`.toLowerCase();
@@ -386,39 +388,20 @@ export class EventsService {
     }
   }
 
-  /** Runs periodically (see EventsLifecycleService). Any 'published' event
-   * whose date + time has passed is moved to 'completed' and has its
-   * banner images deleted — the storage is reclaimed, but the
-   * event row itself (and its bookings/attendee history) is kept forever
-   * so it still shows up, correctly labeled, in every list and report. */
+  /** Mark past events completed while preserving their bookings and images. */
   async autoCompletePastEvents() {
     const candidates = await this.prisma.event.findMany({
-      where: { status: { in: ['published', 'sold-out'] } },
+      where: { status: { not: 'completed' } },
       select: { id: true, date: true, time: true, banners: true, title: true },
     });
 
     const now = Date.now();
-    const due = candidates.filter((event) => {
-      if (!event.date) return false;
-      let timeNormalized = (event.time || '00:00').trim();
-      const ampmMatch = timeNormalized.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-      if (ampmMatch) {
-        let hours = parseInt(ampmMatch[1], 10);
-        const minutes = ampmMatch[2];
-        const period = ampmMatch[3].toUpperCase();
-        if (period === 'PM' && hours < 12) hours += 12;
-        if (period === 'AM' && hours === 12) hours = 0;
-        timeNormalized = `${String(hours).padStart(2, '0')}:${minutes}`;
-      }
-      const stamp = new Date(`${event.date}T${timeNormalized}:00`).getTime();
-      return Number.isFinite(stamp) && stamp <= now;
-    });
+    const due = candidates.filter((event) => eventHasEnded(event, now));
 
     for (const event of due) {
-      await Promise.all(event.banners.map((banner) => this.deleteBannerFile(banner)));
       await this.prisma.event.update({
         where: { id: event.id },
-        data: { status: 'completed', banners: [] },
+        data: { status: 'completed' },
       });
     }
 

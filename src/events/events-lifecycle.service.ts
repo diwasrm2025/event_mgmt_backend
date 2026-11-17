@@ -3,8 +3,8 @@ import { EventsService } from './events.service';
 
 const CHECK_INTERVAL_MS = 60_000;
 
-/** Polls once a minute for any published (or sold-out) event whose date +
- * time has passed and flips it to 'completed', purging its banner images.
+/** Polls once a minute for any event whose date +
+ * time has passed and flips it to 'completed', retaining its history.
  * Implemented as a plain setInterval rather than @nestjs/schedule/cron to
  * avoid an extra dependency for a single periodic job; swap in
  * @nestjs/schedule's @Cron if this project later needs more jobs like it. */
@@ -28,7 +28,7 @@ export class EventsLifecycleService implements OnModuleInit, OnModuleDestroy {
     try {
       const { completed } = await this.eventsService.autoCompletePastEvents();
       if (completed > 0) {
-        this.logger.log(`Marked ${completed} event(s) as completed and cleared their banner images.`);
+        this.logger.log(`Marked ${completed} event(s) as completed.`);
       }
     } catch (err) {
       this.logger.error(`Auto-complete check failed: ${(err as Error).message}`);
