@@ -82,6 +82,10 @@ export class CreateEventDto {
   eventType?: 'free' | 'paid';
 
   @IsOptional()
+  @IsBoolean()
+  allowOfflinePayment?: boolean;
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)

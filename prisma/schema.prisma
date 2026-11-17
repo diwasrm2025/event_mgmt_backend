@@ -110,6 +110,7 @@ model Event {
   attendees     Int               @default(0)
   eventType     String            @default("free")
   price         Float             @default(0)
+  allowOfflinePayment Boolean @default(false)
   status        String            @default("draft")
   description   String            @default("")
   agenda        String[]          @default([])
@@ -121,6 +122,7 @@ model Event {
   /// full manage access; additional per-user access is granted via
   /// EventPermission rows below.
   ownerId       String
+  cardImage     String            @default("")
   banners       String[]          @default([])
   /// Which wizard step the organizer last completed: 1 info, 2 capacity &
   /// banners, 3 remaining details, 4 registration fields, 5 finalized.

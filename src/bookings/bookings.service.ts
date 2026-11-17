@@ -22,6 +22,7 @@ type BookingEvent = {
   previewToken?: string | null;
   status: string;
   eventType: string;
+  allowOfflinePayment?: boolean;
   price: number;
   capacity: number;
   attendees: number;
@@ -146,7 +147,10 @@ export class BookingsService {
     if (!isFree && event.price <= 0) {
       throw new BadRequestException('This paid event does not have a valid ticket price.');
     }
-    if (!isFree) {
+    const isOffline = !isFree && dto.paymentMethod === 'offline';
+    if (isOffline && !event.allowOfflinePayment) throw new BadRequestException('Offline payment is not enabled for this event.');
+    if (isOffline && (dto.transactionId || dto.paymentProof)) throw new BadRequestException('Offline bookings do not accept QR payment details.');
+    if (!isFree && !isOffline) {
       if (dto.paymentMethod !== 'qr') throw new BadRequestException('SBI ePay is paused. Please pay by QR and upload your screenshot.');
       if (!/^[A-Za-z0-9-]{6,100}$/.test(dto.transactionId?.trim() || '')) throw new BadRequestException('Enter a valid transaction ID / UTR (6 to 100 characters).');
       const match = dto.paymentProof?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
@@ -167,6 +171,7 @@ export class BookingsService {
     try {
       booking = await this.prisma.$transaction(async (tx) => {
         const current = await tx.event.findUniqueOrThrow({ where: { id: event.id } });
+        if (isOffline && !current.allowOfflinePayment) throw new BadRequestException('Offline payment is not enabled for this event.');
         const eventIsAvailable = isTest
           ? current.status === 'testing' && current.previewToken === previewToken
           : current.status === 'published';
@@ -180,11 +185,11 @@ export class BookingsService {
           eventId: event.id, userId: isTest ? null : userId ?? null, isTest, name: dto.name.trim(), email: dto.email.trim().toLowerCase(),
           phone: dto.phone?.trim() ?? '', seats: 1, responses: (dto.responses ?? {}) as object,
           amount: Math.max(0, event.price),
-          paymentMethod: isFree ? 'free' : 'qr',
+          paymentMethod: isFree ? 'free' : isOffline ? 'offline' : 'qr',
           paymentStatus: isFree ? 'paid' : 'pending',
           status: isFree ? 'confirmed' : 'pending',
           registrationStatus: isFree ? 'approved' : 'pending',
-          transactionId: isFree ? null : dto.transactionId!.trim(),
+          transactionId: isFree || isOffline ? null : dto.transactionId!.trim(),
           paymentProof: paymentAsset?.secureUrl ?? null,
           paymentProofPublicId: paymentAsset?.publicId ?? null,
           paymentProofFormat: paymentAsset?.format ?? null,
@@ -221,7 +226,7 @@ export class BookingsService {
   }
 
   private async notifyPaymentReview(
-    booking: { id: string; name: string; email: string; amount: number; transactionId?: string | null; rejectionReason?: string | null },
+    booking: { id: string; name: string; email: string; amount: number; paymentMethod?: string; transactionId?: string | null; rejectionReason?: string | null },
     event: { id: string; title: string; ownerId: string },
     status: 'pending' | 'approved' | 'rejected',
   ) {
@@ -350,7 +355,7 @@ export class BookingsService {
         return { booking, notify: false };
       }
       if (dto.status === 'approved') {
-        if (!booking.transactionId || !booking.paymentProof) throw new BadRequestException('Transaction ID and payment proof are required before approval.');
+        if (booking.paymentMethod !== 'offline' && (!booking.transactionId || !booking.paymentProof)) throw new BadRequestException('Transaction ID and payment proof are required before approval.');
         const event = booking.event;
         if (!booking.isTest) {
           if (event.capacity > 0 && event.attendees + booking.seats > event.capacity) throw new BadRequestException('No seats remain. Resolve the payment with the attendee before approving.');

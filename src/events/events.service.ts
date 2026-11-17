@@ -179,6 +179,7 @@ export class EventsService {
         googleMapsUrl: dto.googleMapsUrl?.trim() ?? '',
         capacity: dto.capacity ?? 0,
         attendees: dto.attendees ?? 0,
+        allowOfflinePayment: eventType === 'paid' && (dto.allowOfflinePayment ?? false),
         eventType,
         price,
         status: dto.status ?? 'draft',
@@ -215,6 +216,7 @@ export class EventsService {
 
     const data: Record<string, unknown> = { ...dto };
     if (dto.registrationDeadline !== undefined) data.registrationDeadline = dto.registrationDeadline ? new Date(dto.registrationDeadline) : null;
+    data.allowOfflinePayment = eventType === 'paid' && (dto.allowOfflinePayment ?? existing.allowOfflinePayment);
     data.eventType = eventType;
     data.price = price;
     delete (data as { slug?: unknown }).slug;
@@ -293,7 +295,7 @@ export class EventsService {
       throw new ForbiddenException('Only the event owner or a Super Admin can delete this event.');
     }
 
-    for (const banner of existing.banners) {
+    for (const banner of [...existing.banners, ...(existing.cardImage ? [existing.cardImage] : [])]) {
       await this.deleteBannerFile(banner);
     }
     await this.prisma.event.delete({ where: { id } });
@@ -304,8 +306,9 @@ export class EventsService {
   async duplicate(id: string, user: AuthUser) {
     const source = await this.findOne(id);
     const banners: string[] = [];
+    let copiedCardImage = '';
     try {
-      for (const url of source.banners) {
+      for (const url of [...(source.cardImage ? [source.cardImage] : []), ...source.banners]) {
         if (url.startsWith('https://res.cloudinary.com/')) {
           const asset = await this.cloudinary.copyImageFromUrl(url, 'event-mgmt/banners');
           banners.push(asset.secureUrl);
@@ -316,26 +319,29 @@ export class EventsService {
         await copyFile(join(process.cwd(), 'uploads', 'banners', url.slice(BANNERS_URL_PREFIX.length + 1)), join(process.cwd(), 'uploads', 'banners', filename));
         banners.push(BANNERS_URL_PREFIX + '/' + filename);
       }
+      const cardImage = source.cardImage ? banners.shift()! : '';
+      copiedCardImage = cardImage;
       const result = await this.prisma.event.create({ data: {
         title: source.title + ' copy', category: source.category, date: source.date, time: source.time,
         googleMapsUrl: source.googleMapsUrl,
+        allowOfflinePayment: source.allowOfflinePayment,
         venue: source.venue, capacity: source.capacity, eventType: source.eventType, price: source.price,
         description: source.description, agenda: [...source.agenda], host: source.host, featured: source.featured,
         eventMode: source.eventMode, onlineUrl: source.onlineUrl, registrationDeadline: source.registrationDeadline,
-        companyId: source.companyId, ownerId: user.id, banners, status: 'draft', attendees: 0, slug: null, wizardStep: 4,
+        companyId: source.companyId, ownerId: user.id, cardImage, banners, status: 'draft', attendees: 0, slug: null, wizardStep: 4,
         fields: { create: source.fields.map(field => ({ name: field.name, label: field.label, type: field.type, required: field.required, options: [...field.options], order: field.order })) },
       }, include: { fields: true } });
       await this.logActivity(user.id, 'created', result.title).catch(() => undefined);
       return result;
     } catch (error) {
-      for (const banner of banners) if (!source.banners.includes(banner)) await this.deleteBannerFile(banner);
+      for (const banner of [...banners, ...(copiedCardImage ? [copiedCardImage] : [])]) if (!source.banners.includes(banner) && banner !== source.cardImage) await this.deleteBannerFile(banner);
       throw error;
     }
   }
 
-  async addBanner(id: string, file: Express.Multer.File) {
+  async addBanner(id: string, file: Express.Multer.File, isCardImage = false) {
     const existing = await this.findOne(id);
-    if (existing.banners.length >= 8) {
+    if (!isCardImage && existing.banners.length >= 8) {
       throw new BadRequestException('You can add up to 8 banner images.');
     }
     let image: Buffer;
@@ -354,14 +360,23 @@ export class EventsService {
       format: 'webp',
     });
     try {
-      return await this.prisma.event.update({
+      const updated = await this.prisma.event.update({
         where: { id },
-        data: { banners: { push: asset.secureUrl } },
+        data: isCardImage ? { cardImage: asset.secureUrl } : { banners: { push: asset.secureUrl } },
       });
+      if (isCardImage && existing.cardImage) await this.deleteBannerFile(existing.cardImage).catch(() => undefined);
+      return updated;
     } catch (error) {
       await this.cloudinary.deleteByPublicId(asset.publicId, 'image', asset.deliveryType);
       throw error;
     }
+  }
+
+  async removeCardImage(id: string) {
+    const existing = await this.findOne(id);
+    const updated = await this.prisma.event.update({ where: { id }, data: { cardImage: '' } });
+    if (existing.cardImage) await this.deleteBannerFile(existing.cardImage);
+    return updated;
   }
 
   async removeBanner(id: string, url: string) {

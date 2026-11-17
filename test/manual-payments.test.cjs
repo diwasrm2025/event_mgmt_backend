@@ -64,3 +64,19 @@ test('missing or forged proof and unavailable capacity cannot confirm payment', 
   await assert.rejects(service.updateRegistrationStatus('e', 'b', {status: 'approved'}), /No seats/);
   assert.equal(state.booking.paymentStatus, 'pending');
 });
+
+test('offline payment requires event opt-in and stays pending until approval', async () => {
+  const { service, state, event, dto } = await setup();
+  const offline = { name: dto.name, email: dto.email, paymentMethod: 'offline' };
+  await assert.rejects(service.createBooking('event', offline), /not enabled/);
+  event.allowOfflinePayment = true;
+  await service.createBooking('event', offline);
+  assert.equal(state.booking.paymentMethod, 'offline');
+  assert.equal(state.booking.paymentProof, null);
+  assert.equal(state.booking.transactionId, null);
+  assert.equal(state.booking.paymentStatus, 'pending');
+  assert.equal(event.attendees, 0);
+  await service.updateRegistrationStatus('e', 'b', { status: 'approved' });
+  assert.equal(state.booking.paymentStatus, 'paid');
+  assert.equal(event.attendees, 1);
+});

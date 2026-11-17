@@ -104,6 +104,22 @@ export class EventsController {
 
   @UseGuards(EventAccessGuard)
   @RequireEventAccess(EVENT_PERMISSION.EDIT)
+  @Post(':id/card-image')
+  @UseInterceptors(FileInterceptor('file', { fileFilter: bannerFileFilter, limits: BANNER_UPLOAD_LIMITS }))
+  uploadCardImage(@Param('id') id: string, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No image file was uploaded.');
+    return this.eventsService.addBanner(id, file, true);
+  }
+
+  @UseGuards(EventAccessGuard)
+  @RequireEventAccess(EVENT_PERMISSION.EDIT)
+  @Delete(':id/card-image')
+  removeCardImage(@Param('id') id: string) {
+    return this.eventsService.removeCardImage(id);
+  }
+
+  @UseGuards(EventAccessGuard)
+  @RequireEventAccess(EVENT_PERMISSION.EDIT)
   @Delete(':id/banners')
   removeBanner(@Param('id') id: string, @Body('url') url: string) {
     if (!url) throw new BadRequestException('A banner url is required.');
