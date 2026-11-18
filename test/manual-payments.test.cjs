@@ -9,7 +9,12 @@ async function setup() {
   const db = {
     user: { findMany: async () => [{ email: 'admin@example.com' }, { email: 'owner@example.com' }] },
     event: { findFirst: async () => event, findUniqueOrThrow: async () => event, update: async ({data}) => { event.attendees += data.attendees.increment; return event; } },
-    booking: { create: async ({data}) => state.booking = { id: 'b', ...data }, findFirst: async () => ({ ...state.booking, event }), update: async ({data}) => state.booking = { ...state.booking, ...data, event } },
+    booking: {
+      create: async ({data}) => state.booking = { id: 'b', paymentAccessToken: 'private-token', ...data },
+      findFirst: async () => ({ ...state.booking, event }),
+      update: async ({data}) => state.booking = { ...state.booking, ...data, event },
+      updateMany: async ({data}) => { state.booking = { ...state.booking, ...data }; return { count: 1 }; },
+    },
     $transaction: async fn => fn(db),
   };
   const cloudinary = {
@@ -37,9 +42,18 @@ test('QR submission stays pending, notifies reviewers, and approval sends one ti
   assert.equal(response.paymentProofPublicId, undefined);
   assert.equal(state.booking.paymentStatus, 'pending'); assert.equal(event.attendees, 0);
   assert.deepEqual(state.emails.map(e => e[0]), ['admin@example.com', 'owner@example.com']);
-  await assert.rejects(service.toggleCheckIn('e', 'b'), /Approve payment/);
+  await assert.rejects(service.toggleCheckIn('e', 'b'), /Mark payment as paid/);
   await service.updateRegistrationStatus('e', 'b', {status: 'approved'});
   assert.equal(event.attendees, 1); assert.equal(state.booking.paymentStatus, 'paid');
+  event.status = 'completed';
+  const firstCheckIn = await service.toggleCheckIn('e', 'b');
+  assert.equal(firstCheckIn.checkedIn, true);
+  const checkedInAt = firstCheckIn.checkedInAt;
+  const repeatedCheckIn = await service.toggleCheckIn('e', 'b');
+  assert.equal(repeatedCheckIn.checkedIn, true);
+  assert.equal(repeatedCheckIn.checkedInAt, checkedInAt);
+  assert.equal(state.booking.checkedIn, true);
+  await assert.rejects(service.markOfflinePaymentPaid('e', 'b'), /offline payment/);
   const count = state.emails.length;
   assert.equal(state.emails.filter(e => e[0] === dto.email).length, 1);
   await service.updateRegistrationStatus('e', 'b', {status: 'approved'});
@@ -65,7 +79,7 @@ test('missing or forged proof and unavailable capacity cannot confirm payment', 
   assert.equal(state.booking.paymentStatus, 'pending');
 });
 
-test('offline payment requires event opt-in and stays pending until approval', async () => {
+test('offline acceptance stays pending until marked paid, and check-in requires paid status', async () => {
   const { service, state, event, dto } = await setup();
   const offline = { name: dto.name, email: dto.email, paymentMethod: 'offline' };
   await assert.rejects(service.createBooking('event', offline), /not enabled/);
@@ -76,7 +90,35 @@ test('offline payment requires event opt-in and stays pending until approval', a
   assert.equal(state.booking.transactionId, null);
   assert.equal(state.booking.paymentStatus, 'pending');
   assert.equal(event.attendees, 0);
-  await service.updateRegistrationStatus('e', 'b', { status: 'approved' });
+  await assert.rejects(service.toggleCheckIn('e', 'b'), /Mark payment as paid/);
+  await assert.rejects(service.updateRegistrationStatus('e', 'b', { status: 'approved' }), /offline payment action/);
+  await service.acceptOfflinePayment('e', 'b');
+  assert.equal(state.booking.paymentStatus, 'pending');
+  assert.equal(state.booking.registrationStatus, 'approved');
+  assert.equal(state.booking.paidAt, null);
+  assert.equal(event.attendees, 1);
+  const status = await service.paymentStatus('b', 'private-token');
+  assert.equal(status.paymentMethod, 'offline');
+  assert.equal(status.paymentStatus, 'pending');
+  assert.equal(status.registrationStatus, 'approved');
+  const ticket = state.emails.find(([to]) => to === offline.email);
+  assert.match(ticket[1], /Offline Payment Accepted/);
+  assert.match(ticket[2], /Payment Accepted/);
+  assert.ok(state.emails.some(([, , html]) => /check-in will be enabled after the payment is marked paid/i.test(html)));
+  await assert.rejects(service.toggleCheckIn('e', 'b'), /Mark payment as paid/);
+  const emailCount = state.emails.length;
+  await service.acceptOfflinePayment('e', 'b');
+  assert.equal(state.emails.length, emailCount);
+  assert.equal(event.attendees, 1);
+  await service.markOfflinePaymentPaid('e', 'b');
   assert.equal(state.booking.paymentStatus, 'paid');
+  assert.ok(state.booking.paidAt instanceof Date);
+  assert.equal(event.attendees, 1);
+  assert.equal((await service.paymentStatus('b', 'private-token')).paymentStatus, 'paid');
+  await service.markOfflinePaymentPaid('e', 'b');
+  const checkedIn = await service.toggleCheckIn('e', 'b');
+  assert.equal(checkedIn.checkedIn, true);
+  await assert.rejects(service.updateRegistrationStatus('e', 'b', { status: 'rejected', reason: 'Too late' }), /Completed payments/);
+  await service.updateRegistrationStatus('e', 'b', { status: 'approved' });
   assert.equal(event.attendees, 1);
 });

@@ -463,6 +463,7 @@ export interface TicketEmailContext {
   bookingId: string;
   paymentStatus: string;
   paymentMethod?: string;
+  paymentAccepted?: boolean;
   transactionId?: string | null;
   ctaHref: string;
 }
@@ -478,9 +479,10 @@ export interface TicketEmailContext {
 
 export function renderTicketEmail(ctx: TicketEmailContext): string {
   const isPaid = ctx.paymentStatus === 'paid';
+  const isPaymentAccepted = Boolean(ctx.paymentAccepted);
   const isFree = !ctx.paymentMethod || ctx.paymentMethod === 'free';
-  const statusLabel = isPaid ? 'Confirmed' : 'Pending Payment';
-  const statusDot = isPaid ? '#22c55e' : '#f59e0b';
+  const statusLabel = isPaymentAccepted ? 'Payment Accepted' : isPaid ? 'Confirmed' : 'Pending Payment';
+  const statusDot = isPaymentAccepted || isPaid ? '#22c55e' : '#f59e0b';
   const shortRef = ctx.bookingId.replace(/-/g, '').slice(0, 10).toUpperCase();
 
   return `
@@ -657,7 +659,7 @@ export function renderPaymentReviewEmail(ctx: {
   status: 'pending' | 'approved' | 'rejected';
 }): string {
   const esc = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
-  const heading = ctx.status === 'pending' ? 'Payment submitted for review' : ctx.status === 'approved' ? 'Payment confirmed' : 'Payment could not be verified';
-  const message = ctx.status === 'pending' && ctx.paymentMethod === 'offline' ? 'An offline payment booking has been submitted. Collect and verify the offline payment before confirming registration in the attendee roster.' : ctx.status === 'pending' ? 'A payment screenshot has been submitted. Please review the screenshot and transaction in the attendee roster before confirming registration.' : ctx.status === 'approved' ? 'Payment has been verified and registration is confirmed. Thank you for your payment.' : 'The submitted payment was rejected after review. Registration is not confirmed. Please contact the event organizer with your transaction details to resolve this.';
+  const heading = ctx.status === 'pending' ? 'Payment submitted for review' : ctx.status === 'approved' && ctx.paymentMethod === 'offline' ? 'Offline payment accepted' : ctx.status === 'approved' ? 'Payment confirmed' : 'Payment could not be verified';
+  const message = ctx.status === 'pending' && ctx.paymentMethod === 'offline' ? 'An offline payment booking has been submitted. Collect and verify the offline payment before confirming registration in the attendee roster.' : ctx.status === 'pending' ? 'A payment screenshot has been submitted. Please review the screenshot and transaction in the attendee roster before confirming registration.' : ctx.status === 'approved' && ctx.paymentMethod === 'offline' ? 'The organizer has accepted your offline payment and confirmed your registration. Check-in will be enabled after the payment is marked paid.' : ctx.status === 'approved' ? 'Payment has been verified and registration is confirmed. Thank you for your payment.' : 'The submitted payment was rejected after review. Registration is not confirmed. Please contact the event organizer with your transaction details to resolve this.';
   return baseLayout('<h1>' + heading + '</h1><p>' + message + '</p><p><strong>Event:</strong> ' + esc(ctx.eventTitle) + '</p><p><strong>Attendee:</strong> ' + esc(ctx.name) + ' (' + esc(ctx.email) + ')</p><p><strong>Amount:</strong> INR ' + ctx.amount.toFixed(2) + '</p><p><strong>Booking reference:</strong> ' + esc(ctx.id) + '</p><p><strong>Transaction / UTR:</strong> ' + esc(ctx.transactionId || 'Not provided') + '</p>' + (ctx.status === 'rejected' ? '<p><strong>Reason for rejection:</strong> ' + esc(ctx.rejectionReason || 'Please contact the organizer.') + '</p>' : ''));
 }

@@ -40,13 +40,14 @@ export class BookingsService {
   ) {}
 
   private async sendTicketEmail(
-    booking: { id: string; name: string; email: string; phone?: string; seats: number; paymentStatus: string; paymentMethod: string; transactionId?: string | null },
+    booking: { id: string; name: string; email: string; phone?: string; seats: number; paymentStatus: string; paymentMethod: string; registrationStatus?: string; transactionId?: string | null },
     event: { id: string; title: string; date?: string; time?: string; venue?: string; slug?: string | null },
   ) {
     const appUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',')[0].trim();
     const ctaHref = event.slug ? `${appUrl}/events/${event.slug}` : `${appUrl}/dashboard`;
     const shortRef = booking.id.replace(/-/g, '').slice(0, 8).toUpperCase();
-    const subject = `${booking.paymentMethod === 'free' ? 'Booking Confirmed' : 'Payment Confirmed'}: Ticket #${shortRef} - ${event.title}`;
+    const paymentAccepted = booking.paymentMethod === 'offline' && booking.registrationStatus === 'approved';
+    const subject = `${booking.paymentMethod === 'free' ? 'Booking Confirmed' : paymentAccepted ? 'Offline Payment Accepted' : 'Payment Confirmed'}: Ticket #${shortRef} - ${event.title}`;
     const html = renderTicketEmail({
       attendeeName: booking.name,
       attendeeEmail: booking.email,
@@ -59,6 +60,7 @@ export class BookingsService {
       bookingId: booking.id,
       paymentStatus: booking.paymentStatus,
       paymentMethod: booking.paymentMethod,
+      paymentAccepted,
       transactionId: booking.transactionId,
       ctaHref,
     });
@@ -244,7 +246,7 @@ export class BookingsService {
     if (!token) throw new NotFoundException('Booking not found.');
     const booking = await this.prisma.booking.findFirst({
       where: { id: bookingId, paymentAccessToken: token },
-      select: { paymentStatus: true, registrationStatus: true, paidAt: true, status: true, rejectionReason: true, isTest: true },
+      select: { paymentStatus: true, paymentMethod: true, registrationStatus: true, paidAt: true, status: true, rejectionReason: true, isTest: true },
     });
     if (!booking) throw new NotFoundException('Booking not found.');
     return booking;
@@ -329,18 +331,27 @@ export class BookingsService {
     });
   }
 
-  /** Attendee Management capability: toggles a single attendee's check-in
-   * state at the door. */
+  /** Check-in is a permanent event record; a checked-in attendee cannot be
+   * checked out or have their check-in cleared. */
   async toggleCheckIn(eventId: string, bookingId: string) {
     const booking = await this.prisma.booking.findFirst({ where: { id: bookingId, eventId } });
     if (!booking) throw new NotFoundException('Booking not found.');
     if (booking.isTest) throw new BadRequestException('Test registrations cannot be checked in.');
-    if (booking.paymentStatus !== 'paid' || booking.registrationStatus !== 'approved') throw new BadRequestException('Approve payment before check-in.');
-    return this.prisma.booking.update({
-      where: { id: bookingId },
-      data: { checkedIn: !booking.checkedIn, checkedInAt: !booking.checkedIn ? new Date() : null },
+    if (booking.paymentStatus !== 'paid' || booking.registrationStatus !== 'approved') throw new BadRequestException('Mark payment as paid before check-in.');
+    if (booking.checkedIn) return { id: booking.id, checkedIn: true, checkedInAt: booking.checkedInAt };
+    await this.prisma.booking.updateMany({
+      where: {
+        id: bookingId, eventId, isTest: false, paymentStatus: 'paid', registrationStatus: 'approved', checkedIn: false,
+      },
+      data: { checkedIn: true, checkedInAt: new Date() },
+    });
+    const updated = await this.prisma.booking.findFirst({
+      where: { id: bookingId, eventId },
       select: { id: true, checkedIn: true, checkedInAt: true },
     });
+    if (!updated) throw new NotFoundException('Booking not found.');
+    if (!updated.checkedIn) throw new BadRequestException('This registration can no longer be checked in.');
+    return updated;
   }
 
   /** Attendee Management capability: approve or reject a registration. */
@@ -353,6 +364,13 @@ export class BookingsService {
       if (booking.paymentStatus === 'paid') {
         if (dto.status !== 'approved') throw new BadRequestException('Completed payments cannot be changed through registration review.');
         return { booking, notify: false };
+      }
+      if (booking.paymentMethod === 'offline' && booking.registrationStatus === 'approved') {
+        if (dto.status !== 'approved') throw new BadRequestException('Accepted offline payments cannot be changed through registration review.');
+        return { booking, notify: false };
+      }
+      if (booking.paymentMethod === 'offline' && dto.status === 'approved') {
+        throw new BadRequestException('Accept offline payments through the offline payment action.');
       }
       if (dto.status === 'approved') {
         if (booking.paymentMethod !== 'offline' && (!booking.transactionId || !booking.paymentProof)) throw new BadRequestException('Transaction ID and payment proof are required before approval.');
@@ -379,6 +397,59 @@ export class BookingsService {
       await this.notifyPaymentReview(result.booking, result.booking.event, dto.status);
     }
     return result.booking;
+  }
+
+  async acceptOfflinePayment(eventId: string, bookingId: string) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const booking = await tx.booking.findFirst({ where: { id: bookingId, eventId }, include: { event: true } });
+      if (!booking) throw new NotFoundException('Booking not found.');
+      if (booking.paymentMethod !== 'offline') throw new BadRequestException('This registration is not an offline payment.');
+      if (booking.registrationStatus === 'approved' && booking.paymentStatus === 'pending') {
+        return { booking, notify: false };
+      }
+      if (booking.paymentStatus !== 'pending' || booking.registrationStatus !== 'pending') {
+        throw new BadRequestException('Only pending offline payments can be accepted.');
+      }
+      if (!booking.isTest) {
+        if (booking.event.capacity > 0 && booking.event.attendees + booking.seats > booking.event.capacity) {
+          throw new BadRequestException('No seats remain. Resolve the payment with the attendee before accepting.');
+        }
+        await tx.event.update({ where: { id: eventId }, data: {
+          attendees: { increment: booking.seats },
+          ...(booking.event.capacity > 0 && booking.event.attendees + booking.seats >= booking.event.capacity ? { status: 'sold-out' } : {}),
+        } });
+      }
+      const updated = await tx.booking.update({ where: { id: bookingId }, data: {
+        registrationStatus: 'approved',
+        rejectionReason: null,
+        status: 'confirmed',
+        paymentStatus: 'pending',
+      }, include: { event: true } });
+      return { booking: updated, notify: true };
+    }, { isolationLevel: 'Serializable' });
+    if (result.notify && !result.booking.isTest) {
+      await this.sendTicketEmail(result.booking, result.booking.event);
+      await this.notifyPaymentReview(result.booking, result.booking.event, 'approved');
+    }
+    return result.booking;
+  }
+
+  async markOfflinePaymentPaid(eventId: string, bookingId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const booking = await tx.booking.findFirst({ where: { id: bookingId, eventId } });
+      if (!booking) throw new NotFoundException('Booking not found.');
+      if (booking.paymentMethod !== 'offline' || booking.registrationStatus !== 'approved') {
+        throw new BadRequestException('Accept the offline payment before marking it paid.');
+      }
+      if (booking.paymentStatus === 'paid') return booking;
+      if (booking.paymentStatus !== 'pending') {
+        throw new BadRequestException('Only accepted offline payments can be marked paid.');
+      }
+      return tx.booking.update({
+        where: { id: bookingId },
+        data: { paymentStatus: 'paid', paidAt: new Date() },
+      });
+    }, { isolationLevel: 'Serializable' });
   }
 
   async verifySbiOrder(bookingId: string) {

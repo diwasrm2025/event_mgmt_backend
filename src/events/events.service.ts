@@ -295,8 +295,19 @@ export class EventsService {
       throw new ForbiddenException('Only the event owner or a Super Admin can delete this event.');
     }
 
+    const bookings = await this.prisma.booking.findMany({
+      where: { eventId: id },
+      select: { paymentProof: true, paymentProofPublicId: true },
+    });
     for (const banner of [...existing.banners, ...(existing.cardImage ? [existing.cardImage] : [])]) {
       await this.deleteBannerFile(banner);
+    }
+    for (const booking of bookings) {
+      if (booking.paymentProofPublicId) {
+        await this.cloudinary.deleteByPublicId(booking.paymentProofPublicId, 'image', 'authenticated');
+      } else if (booking.paymentProof) {
+        await this.cloudinary.deleteImageByUrl(booking.paymentProof);
+      }
     }
     await this.prisma.event.delete({ where: { id } });
     await this.logActivity(user.id, 'deleted', existing.title);

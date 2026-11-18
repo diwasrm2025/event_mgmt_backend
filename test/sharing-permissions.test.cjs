@@ -86,6 +86,8 @@ test('HTTP routes enforce independent view, payment approval, and check-in acces
     getPaymentProof: async () => ({ data: Buffer.from('proof'), contentType: 'image/png', fileName: 'payment-proof.png' }),
     toggleCheckIn: async () => ({ id: 'booking', checkedIn: true }),
     updateRegistrationStatus: async () => ({ id: 'booking', paymentStatus: 'paid', status: 'confirmed', registrationStatus: 'approved', event: { private: true }, paymentAccessToken: 'secret' }),
+    acceptOfflinePayment: async () => ({ id: 'booking', paymentStatus: 'pending', status: 'confirmed', registrationStatus: 'approved' }),
+    markOfflinePaymentPaid: async () => ({ id: 'booking', paymentStatus: 'paid', status: 'confirmed', registrationStatus: 'approved', paidAt: new Date() }),
   };
   const module = await Test.createTestingModule({ controllers: [BookingsController], providers: [EventAccessGuard, { provide: PrismaService, useValue: prisma }, { provide: BookingsService, useValue: service }] })
     .overrideGuard(JwtAuthGuard).useValue({ canActivate: context => { const req = context.switchToHttp().getRequest(); req.user = { id: req.headers['x-test-role'], permissions: req.headers['x-test-role'] === 'super' ? ['events:manage_all'] : [] }; return Boolean(req.user.id); } }).compile();
@@ -110,6 +112,12 @@ test('HTTP routes enforce independent view, payment approval, and check-in acces
       const approval = await fetch(`${base}/bookings/event/event/booking/registration-status`, { method: 'PATCH', headers, body: JSON.stringify({ status: 'approved' }) });
       assert.equal(approval.status, payment ? 200 : 403, `${role} approval`);
       if (payment) { const result = await approval.json(); assert.equal(result.paymentAccessToken, undefined); assert.equal(result.event, undefined); }
+      const offlineApproval = await fetch(`${base}/bookings/event/event/booking/accept-offline`, { method: 'PATCH', headers });
+      assert.equal(offlineApproval.status, payment ? 200 : 403, `${role} offline payment acceptance`);
+      if (payment) assert.equal((await offlineApproval.json()).paymentStatus, 'pending');
+      const markPaid = await fetch(`${base}/bookings/event/event/booking/mark-paid`, { method: 'PATCH', headers });
+      assert.equal(markPaid.status, payment ? 200 : 403, `${role} offline payment completion`);
+      if (payment) assert.equal((await markPaid.json()).paymentStatus, 'paid');
       const check = await fetch(`${base}/bookings/event/event/booking/check-in`, { method: 'PATCH', headers });
       assert.equal(check.status, checkin ? 200 : 403, `${role} check-in`);
       const deletion = await fetch(`${base}/bookings/event/event/booking`, { method: 'DELETE', headers });

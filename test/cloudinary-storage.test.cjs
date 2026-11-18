@@ -99,6 +99,36 @@ test('event banner replacement and removal delete the removed Cloudinary image',
   assert.deepEqual(event.banners, []);
 });
 
+test('event deletion removes event images and booking payment proofs before deleting related records', async () => {
+  const banner = 'https://res.cloudinary.com/test-cloud/image/upload/v123/event-mgmt/banners/event.webp';
+  const cardImage = 'https://res.cloudinary.com/test-cloud/image/upload/v124/event-mgmt/banners/card.webp';
+  const deletedImages = [];
+  const deletedProofs = [];
+  const databaseDeletes = [];
+  const event = { id: 'event', ownerId: 'owner', title: 'Event', banners: [banner], cardImage };
+  const prisma = {
+    event: {
+      findUnique: async () => event,
+      delete: async ({ where }) => { databaseDeletes.push(where); },
+    },
+    booking: {
+      findMany: async () => [
+        { paymentProof: 'https://res.cloudinary.com/test-cloud/image/authenticated/v125/event-mgmt/payment-proofs/legacy.png', paymentProofPublicId: null },
+        { paymentProof: 'https://res.cloudinary.com/test-cloud/image/authenticated/v126/event-mgmt/payment-proofs/proof.png', paymentProofPublicId: 'event-mgmt/payment-proofs/proof' },
+      ],
+    },
+    activity: { create: async () => ({}) },
+  };
+  const service = new EventsService(prisma, {
+    deleteImageByUrl: async (url) => { deletedImages.push(url); return true; },
+    deleteByPublicId: async (...args) => { deletedProofs.push(args); },
+  });
+  await service.remove('event', { id: 'owner', permissions: [] });
+  assert.deepEqual(deletedImages, [banner, cardImage, 'https://res.cloudinary.com/test-cloud/image/authenticated/v125/event-mgmt/payment-proofs/legacy.png']);
+  assert.deepEqual(deletedProofs, [['event-mgmt/payment-proofs/proof', 'image', 'authenticated']]);
+  assert.deepEqual(databaseDeletes, [{ id: 'event' }]);
+});
+
 test('booking deletion removes its authenticated payment proof from Cloudinary', async () => {
   const deletions = [];
   const prisma = {

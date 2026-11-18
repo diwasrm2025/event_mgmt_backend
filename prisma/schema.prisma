@@ -237,7 +237,7 @@ model Notification {
   createdAt DateTime @default(now())
   userId    String
   eventId   String?
-  event     Event?   @relation(fields: [eventId], references: [id])
+  event     Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])

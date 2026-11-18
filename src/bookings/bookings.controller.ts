@@ -100,5 +100,25 @@ export class BookingsController {
     }));
   }
 
+  @UseGuards(EventAccessGuard)
+  @RequireEventAccess(EVENT_PERMISSION.PAYMENT_APPROVE, 'eventId')
+  @Patch('event/:eventId/:bookingId/accept-offline')
+  acceptOfflinePayment(@Param('eventId') eventId: string, @Param('bookingId') bookingId: string) {
+    return this.bookingsService.acceptOfflinePayment(eventId, bookingId).then(booking => ({
+      id: booking.id, paymentStatus: booking.paymentStatus, registrationStatus: booking.registrationStatus,
+      rejectionReason: booking.rejectionReason, paidAt: booking.paidAt, status: booking.status,
+    }));
+  }
+
+  @UseGuards(EventAccessGuard)
+  @RequireEventAccess(EVENT_PERMISSION.PAYMENT_APPROVE, 'eventId')
+  @Patch('event/:eventId/:bookingId/mark-paid')
+  markOfflinePaymentPaid(@Param('eventId') eventId: string, @Param('bookingId') bookingId: string) {
+    return this.bookingsService.markOfflinePaymentPaid(eventId, bookingId).then(booking => ({
+      id: booking.id, paymentStatus: booking.paymentStatus, registrationStatus: booking.registrationStatus,
+      paidAt: booking.paidAt, status: booking.status,
+    }));
+  }
+
  
 }
